@@ -1,0 +1,1787 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MICR 210: Virtual Gram Stain Lab Practicum</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            lab: { 500: '#14b8a6', 900: '#134e4a', dark: '#080d1a', panel: '#0f172a' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+    body { font-family: 'Plus Jakarta Sans', sans-serif; user-select: none; overflow-x: hidden; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+    
+    #cursor-item {
+      position: fixed; pointer-events: none; z-index: 9999;
+      transform: translate(-10%, -10%); display: none;
+      filter: drop-shadow(0 15px 25px rgba(0,0,0,0.5));
+    }
+    #cursor-item.is-slide { transform: translate(-50%, -50%); }
+
+    @keyframes flameFlicker {
+      0%, 100% { transform: scaleY(1) scaleX(1) skewX(0deg); opacity: 0.95; }
+      25% { transform: scaleY(1.08) scaleX(0.95) skewX(1deg); opacity: 1; }
+      50% { transform: scaleY(0.96) scaleX(1.05) skewX(-1deg); opacity: 0.9; }
+      75% { transform: scaleY(1.12) scaleX(0.92) skewX(2deg); opacity: 1; }
+    }
+    .flame-active { animation: flameFlicker 0.14s infinite alternate ease-in-out; }
+
+    @keyframes loopGlow {
+      0% { stroke: #94a3b8; filter: none; }
+      100% { stroke: #ef4444; filter: drop-shadow(0 0 6px #ef4444); }
+    }
+    .wire-red-hot { animation: loopGlow 0.3s forwards ease-in; }
+
+    @keyframes washCascade {
+      0% { top: -100%; opacity: 0.9; }
+      50% { top: 0%; opacity: 0.9; }
+      100% { top: 100%; opacity: 0; }
+    }
+    .water-cascade { animation: washCascade 0.75s ease-in-out forwards; }
+    
+    .slide-in-bench {
+      width: 160px; height: 60px; background: rgba(255, 255, 255, 0.15); border: 2px solid rgba(255, 255, 255, 0.4);
+      border-radius: 4px; position: relative; box-shadow: 0 6px 16px rgba(0,0,0,0.5);
+      cursor: grab; transition: border-color 0.2s; overflow: hidden;
+    }
+    .slide-in-bench:hover { border-color: #0d9488; }
+
+    .quiz-radio { appearance: none; width: 16px; height: 16px; border: 2px solid #38bdf8; border-radius: 50%; display: inline-block; position: relative; margin-right: 8px; top: 2px; cursor: pointer; }
+    .quiz-radio:checked::before { content: ''; position: absolute; top: 2px; left: 2px; width: 8px; height: 8px; background: #38bdf8; border-radius: 50%; }
+
+    /* A4 Portrait Strict Printable Layout */
+    @media print {
+      @page { size: A4 portrait; margin: 1.2cm; }
+      body { background-color: white !important; color: black !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; margin: 0; padding: 0; }
+      #app-container, #toast-container, #cursor-item, .modal-overlay { display: none !important; }
+      #print-area { display: block !important; position: static; width: 100%; }
+      td, th { border: 1px solid #94a3b8 !important; }
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col selection:bg-teal-500 selection:text-white">
+
+  <!-- Floating Active Tool Cursor -->
+  <div id="cursor-item"></div>
+
+  <!-- Toast Alerts -->
+  <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <!-- PHASE 1: PROTOCOL BRIEFING & SAMPLE SELECTION MODAL -->
+  <div id="protocol-modal" class="modal-overlay fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center space-x-3 border-b border-slate-800 pb-3">
+        <div class="w-10 h-10 rounded-xl bg-teal-900/60 border border-teal-500/40 flex items-center justify-center text-teal-300">
+          <i class="fa-solid fa-book-medical text-lg"></i>
+        </div>
+        <div>
+          <h2 class="text-lg font-bold text-white tracking-wide">MICR 210: Lab Training & Practice</h2>
+          <p class="text-xs text-slate-400">Phase 1: Instructor Guided Gram Stain Simulator</p>
+        </div>
+      </div>
+      
+      <div class="space-y-3 text-xs text-slate-300 leading-relaxed">
+        <div class="bg-slate-950 p-3 rounded-lg border border-slate-800">
+          <strong class="text-teal-300 block mb-1">Laboratory Protocol:</strong>
+          Choose a sample to practice your technique. The instructor prompts will guide you through aseptic smear preparation and the critical differential staining timing (Decolorizer = 5 to 8 seconds).
+        </div>
+        
+        <p class="font-bold text-white mt-4 mb-2">Select a training sample to begin your guided practice:</p>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <button onclick="startGuidedPhase('Staphylococcus')" class="bg-slate-950 border border-slate-700 hover:border-teal-500 rounded-xl p-3 text-left transition group">
+            <span class="block font-bold text-teal-400 group-hover:text-teal-300">Sample 1</span>
+            <span class="text-[10px] text-slate-400 block mt-1">Culture Type A</span>
+          </button>
+          <button onclick="startGuidedPhase('E.coli')" class="bg-slate-950 border border-slate-700 hover:border-teal-500 rounded-xl p-3 text-left transition group">
+            <span class="block font-bold text-teal-400 group-hover:text-teal-300">Sample 2</span>
+            <span class="text-[10px] text-slate-400 block mt-1">Culture Type B</span>
+          </button>
+          <button onclick="startGuidedPhase('Mixed')" class="bg-slate-950 border border-amber-700/50 hover:border-amber-500 rounded-xl p-3 text-left transition group">
+            <span class="block font-bold text-amber-400 group-hover:text-amber-300">Sample 3</span>
+            <span class="text-[10px] text-slate-400 block mt-1">Mixed Culture</span>
+          </button>
+        </div>
+        
+        <div class="pt-4 mt-2 border-t border-slate-800 flex justify-between items-center">
+          <span class="text-slate-500 text-[10px]">Already confident in your technique?</span>
+          <button onclick="startExamPrompt()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 px-4 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-2">
+            <span>Skip Practice & Proceed to Assessment</span>
+            <i class="fa-solid fa-arrow-right text-amber-400"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- VIEW: BRIEFING & EXAM SETUP (Phase 2 Gateway) -->
+  <div id="briefing-modal" class="modal-overlay fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-2xl w-full p-8 shadow-2xl space-y-6 relative overflow-hidden">
+      <div class="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-amber-500 to-rose-500"></div>
+      
+      <div class="text-center">
+        <div class="w-16 h-16 mx-auto bg-amber-500/20 rounded-full flex items-center justify-center mb-3 border border-amber-500/30">
+          <i class="fa-solid fa-user-graduate text-amber-400 text-3xl"></i>
+        </div>
+        <h2 class="text-xl font-bold text-white mb-2">Official Evaluation Gateway</h2>
+        <p class="text-sm text-slate-400 max-w-md mx-auto">Please identify yourself to begin the final assessment. This consists of a theoretical pre-lab quiz followed immediately by a blinded practicum.</p>
+      </div>
+      
+      <div class="bg-slate-950 p-5 rounded-lg border border-slate-800 text-sm space-y-4">
+        <div>
+          <label class="block text-slate-300 font-semibold mb-1">Student Full Name *</label>
+          <input type="text" id="exam-student-name" placeholder="e.g., Arthur Pendelton" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-amber-500 focus:outline-none transition">
+        </div>
+        <div>
+          <label class="block text-slate-300 font-semibold mb-1">Academic ID / Section *</label>
+          <input type="text" id="exam-student-id" placeholder="e.g., RT-2026-9041" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-amber-500 focus:outline-none transition">
+        </div>
+        <div class="text-xs text-rose-400 hidden" id="briefing-error"><i class="fa-solid fa-triangle-exclamation"></i> Please fill in both your Name and Academic ID to begin.</div>
+      </div>
+
+      <button onclick="validateAndStartQuiz()" class="w-full bg-gradient-to-r from-amber-600 to-rose-600 hover:from-amber-500 hover:to-rose-500 text-white font-bold py-3 px-8 rounded-lg shadow-lg transition flex items-center justify-center gap-2">
+        <span>Proceed to Theory Quiz</span>
+        <i class="fa-solid fa-file-signature"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- PHASE 3: PRE-LAB QUIZ MODAL -->
+  <div id="quiz-modal" class="modal-overlay fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center space-x-3 border-b border-slate-800 pb-3">
+        <div class="w-10 h-10 rounded-xl bg-blue-900/60 border border-blue-500/40 flex items-center justify-center text-blue-300">
+          <i class="fa-solid fa-list-check text-lg"></i>
+        </div>
+        <div>
+          <h2 class="text-lg font-bold text-white tracking-wide">Phase 3: Pre-Exam Theory Quiz</h2>
+          <p class="text-xs text-slate-400">Complete this quiz. Your score will be saved to your final report.</p>
+        </div>
+      </div>
+      
+      <div class="space-y-4 text-xs text-slate-200 max-h-[60vh] overflow-y-auto pr-2" id="quiz-form">
+        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800" id="q-order-box">
+          <p class="font-bold mb-3 text-sm text-amber-300">1. Select the correct sequential order for the Gram Stain reagents:</p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-slate-400 mb-1">Step 1 (Primary):</label>
+              <select id="q-order-1" class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-slate-200"><option value="">-- Select --</option><option value="cv">Crystal Violet</option><option value="iodine">Gram's Iodine</option><option value="decol">Decolorizer (Alcohol)</option><option value="saf">Safranin</option></select>
+            </div>
+            <div>
+              <label class="block text-slate-400 mb-1">Step 2 (Mordant):</label>
+              <select id="q-order-2" class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-slate-200"><option value="">-- Select --</option><option value="cv">Crystal Violet</option><option value="iodine">Gram's Iodine</option><option value="decol">Decolorizer (Alcohol)</option><option value="saf">Safranin</option></select>
+            </div>
+            <div>
+              <label class="block text-slate-400 mb-1">Step 3 (Extraction):</label>
+              <select id="q-order-3" class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-slate-200"><option value="">-- Select --</option><option value="cv">Crystal Violet</option><option value="iodine">Gram's Iodine</option><option value="decol">Decolorizer (Alcohol)</option><option value="saf">Safranin</option></select>
+            </div>
+            <div>
+              <label class="block text-slate-400 mb-1">Step 4 (Counterstain):</label>
+              <select id="q-order-4" class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-slate-200"><option value="">-- Select --</option><option value="cv">Crystal Violet</option><option value="iodine">Gram's Iodine</option><option value="decol">Decolorizer (Alcohol)</option><option value="saf">Safranin</option></select>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800" id="q1-box">
+          <p class="font-bold mb-2">2. What is the most critical and time-sensitive step in the Gram stain procedure?</p>
+          <label class="block mb-1 cursor-pointer hover:bg-slate-800/50 p-1 rounded"><input type="radio" name="q1" value="a" class="quiz-radio"> Application of Crystal Violet</label>
+          <label class="block mb-1 cursor-pointer hover:bg-slate-800/50 p-1 rounded"><input type="radio" name="q1" value="b" class="quiz-radio"> Decolorization with alcohol/acetone</label>
+          <label class="block mb-1 cursor-pointer hover:bg-slate-800/50 p-1 rounded"><input type="radio" name="q1" value="c" class="quiz-radio"> Heat-fixation passes</label>
+        </div>
+        
+        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800" id="q2-box">
+          <p class="font-bold mb-2">3. Why must a slide be completely air-dried before heat fixation?</p>
+          <label class="block mb-1 cursor-pointer hover:bg-slate-800/50 p-1 rounded"><input type="radio" name="q2" value="a" class="quiz-radio"> To prevent boiling and distortion of cellular morphology</label>
+          <label class="block mb-1 cursor-pointer hover:bg-slate-800/50 p-1 rounded"><input type="radio" name="q2" value="b" class="quiz-radio"> To allow the bacteria to multiply</label>
+          <label class="block mb-1 cursor-pointer hover:bg-slate-800/50 p-1 rounded"><input type="radio" name="q2" value="c" class="quiz-radio"> To let the saline react with the cell wall</label>
+        </div>
+
+        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800" id="q3-box">
+          <p class="font-bold mb-2">4. What color do Gram-negative bacteria appear after a properly executed stain?</p>
+          <label class="block mb-1 cursor-pointer hover:bg-slate-800/50 p-1 rounded"><input type="radio" name="q3" value="a" class="quiz-radio"> Deep Purple / Violet</label>
+          <label class="block mb-1 cursor-pointer hover:bg-slate-800/50 p-1 rounded"><input type="radio" name="q3" value="b" class="quiz-radio"> Pink / Red</label>
+          <label class="block mb-1 cursor-pointer hover:bg-slate-800/50 p-1 rounded"><input type="radio" name="q3" value="c" class="quiz-radio"> Colorless</label>
+        </div>
+
+        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800" id="q4-box">
+          <p class="font-bold mb-2">5. What is the primary function of Gram's Iodine (mordant)?</p>
+          <label class="block mb-1 cursor-pointer hover:bg-slate-800/50 p-1 rounded"><input type="radio" name="q4" value="a" class="quiz-radio"> To form a large, insoluble crystal violet-iodine complex.</label>
+          <label class="block mb-1 cursor-pointer hover:bg-slate-800/50 p-1 rounded"><input type="radio" name="q4" value="b" class="quiz-radio"> To wash away the primary stain.</label>
+          <label class="block mb-1 cursor-pointer hover:bg-slate-800/50 p-1 rounded"><input type="radio" name="q4" value="c" class="quiz-radio"> To counterstain Gram-negative cells.</label>
+        </div>
+
+        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800" id="q5-box">
+          <p class="font-bold mb-2">6. Which structural characteristic causes Gram-positive cells to retain the primary stain?</p>
+          <label class="block mb-1 cursor-pointer hover:bg-slate-800/50 p-1 rounded"><input type="radio" name="q5" value="a" class="quiz-radio"> An outer lipid membrane.</label>
+          <label class="block mb-1 cursor-pointer hover:bg-slate-800/50 p-1 rounded"><input type="radio" name="q5" value="b" class="quiz-radio"> A thick layer of peptidoglycan.</label>
+          <label class="block mb-1 cursor-pointer hover:bg-slate-800/50 p-1 rounded"><input type="radio" name="q5" value="c" class="quiz-radio"> The presence of a capsule.</label>
+        </div>
+      </div>
+
+      <div class="pt-3 border-t border-slate-800 flex justify-end">
+        <button onclick="submitQuiz()" class="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold px-6 py-2 rounded-xl text-xs shadow-lg transition flex items-center gap-2">
+          <span>Submit & Start Practicum</span>
+          <i class="fa-solid fa-lock-open"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN APP WORKSPACE -->
+  <div id="app-container" class="flex flex-col min-h-screen">
+    
+    <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-30 shadow-lg">
+      <div class="max-w-7xl mx-auto px-4 py-2.5 flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+          <div class="h-10 w-10 rounded-xl bg-gradient-to-tr from-teal-600 via-teal-800 to-amber-600 flex items-center justify-center shadow border border-amber-500/30">
+            <i class="fa-solid fa-microscope text-white text-base"></i>
+          </div>
+          <div>
+            <div class="flex items-center space-x-2">
+              <h1 class="font-extrabold text-base text-white tracking-tight">MICR 210 Lab</h1>
+              <span id="badge-phase" class="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-teal-950 text-teal-300 border border-teal-700">PHASE 1: GUIDED TUTORIAL</span>
+            </div>
+            <p class="text-[11px] text-slate-400">Clinical Bacteriology Bench Simulator</p>
+          </div>
+        </div>
+        
+        <div class="flex items-center space-x-2 text-xs">
+          <button id="btn-toggle-sound" class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition">
+            <i id="sound-icon" class="fa-solid fa-volume-high text-teal-400"></i>
+            <span id="sound-text" class="hidden sm:inline">Sound ON</span>
+          </button>
+          <button onclick="resetBench()" class="bg-slate-800 hover:bg-rose-950/70 hover:text-rose-300 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition">
+            <i class="fa-solid fa-rotate-right text-amber-400"></i> <span class="hidden sm:inline">Reset Bench</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 py-4 flex-1 flex flex-col w-full relative">
+      
+      <!-- Top Navigation Tracker -->
+      <div id="app-nav-tabs" class="flex border-b border-slate-800 mb-4 space-x-2 overflow-x-auto">
+        <button id="nav-bench" onclick="showSubTab('bench')" class="px-4 py-2 text-sm font-semibold border-b-2 border-teal-500 text-teal-400 bg-slate-900/80 rounded-t-lg transition flex items-center gap-2 whitespace-nowrap">
+          <i class="fa-solid fa-flask"></i> Laboratory Bench
+        </button>
+        <button id="nav-scope" onclick="showSubTab('microscope')" class="px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 rounded-t-lg transition flex items-center gap-2 whitespace-nowrap">
+          <i class="fa-solid fa-eye"></i> Optical Microscope
+        </button>
+      </div>
+
+      <!-- INSTRUCTOR PROMPT BAR -->
+      <div id="guided-instruction-bar" class="bg-gradient-to-r from-teal-950/80 via-slate-900 to-slate-900 border border-teal-800/80 rounded-xl p-3 mb-4 shadow flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div class="flex items-center space-x-3">
+          <div class="w-8 h-8 rounded-full bg-teal-600 text-white font-bold flex items-center justify-center font-mono" id="guide-step-num">1</div>
+          <div>
+            <span class="text-[10px] text-teal-400 uppercase font-mono tracking-wider font-bold">Step-by-Step Instructor Directive</span>
+            <p id="guide-step-text" class="text-slate-100 font-semibold text-xs sm:text-sm">Click the Bunsen Burner to ignite the gas flame cone.</p>
+          </div>
+        </div>
+        <button onclick="startExamPrompt()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5">
+          <span>End Practice & Go to Assessment</span>
+          <i class="fa-solid fa-forward text-amber-400"></i>
+        </button>
+      </div>
+
+      <!-- VIEW: BENCH -->
+      <section id="view-bench" class="block space-y-4">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          
+          <!-- Equipment Rack -->
+          <div class="lg:col-span-3 bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col gap-2">
+            <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+              <h3 class="font-bold text-xs uppercase tracking-wider text-slate-400">Equipment Rack</h3>
+              <button onclick="clearHand()" class="text-[10px] text-teal-400 hover:underline">Drop item [Esc]</button>
+            </div>
+
+            <!-- Non-chemical tools remain fixed -->
+            <button onclick="equip('loop')" class="equip-btn bg-slate-950 border border-slate-800 p-2.5 rounded-lg flex items-center gap-3 hover:bg-slate-800 transition" data-id="loop">
+              <div class="w-7 h-7 rounded bg-slate-800 flex items-center justify-center text-slate-300"><i class="fa-solid fa-spoon"></i></div>
+              <div class="text-left"><div class="text-xs font-bold text-white">Inoculating Loop</div><div class="text-[10px] text-slate-500 reagent-hint">Sterilize & pick colonies</div></div>
+            </button>
+            <button onclick="equip('saline')" class="equip-btn bg-slate-950 border border-slate-800 p-2.5 rounded-lg flex items-center gap-3 hover:bg-slate-800 transition" data-id="saline">
+              <div class="w-7 h-7 rounded bg-blue-950 flex items-center justify-center text-blue-400"><i class="fa-solid fa-droplet"></i></div>
+              <div class="text-left"><div class="text-xs font-bold text-white">Saline Dropper</div><div class="text-[10px] text-slate-500 reagent-hint">Dispense base droplet</div></div>
+            </button>
+
+            <div class="pt-2 border-t border-slate-800/80"><span class="text-[10px] font-mono text-slate-500 uppercase">Chemical Reagents</span></div>
+
+            <!-- Dynamic Reagent Rack for Shuffling -->
+            <div id="reagent-rack" class="flex flex-col gap-2">
+              <button onclick="equip('cv')" class="equip-btn bg-slate-950 border border-slate-800 p-2 rounded-lg flex items-center gap-3 hover:bg-slate-800 transition" data-id="cv">
+                <div class="w-6 h-6 rounded bg-purple-950 flex items-center justify-center text-purple-400"><i class="fa-solid fa-bottle-droplet"></i></div>
+                <div class="text-left"><div class="text-xs font-bold text-white">Crystal Violet</div><div class="text-[10px] text-slate-500 reagent-hint">Primary Stain (Sim 60s)</div></div>
+              </button>
+              <button onclick="equip('iodine')" class="equip-btn bg-slate-950 border border-slate-800 p-2 rounded-lg flex items-center gap-3 hover:bg-slate-800 transition" data-id="iodine">
+                <div class="w-6 h-6 rounded bg-amber-950 flex items-center justify-center text-amber-500"><i class="fa-solid fa-bottle-droplet"></i></div>
+                <div class="text-left"><div class="text-xs font-bold text-white">Gram's Iodine</div><div class="text-[10px] text-slate-500 reagent-hint">Mordant (Sim 60s)</div></div>
+              </button>
+              <button onclick="equip('decol')" class="equip-btn bg-slate-950 border border-slate-800 p-2 rounded-lg flex items-center gap-3 hover:bg-slate-800 transition" data-id="decol">
+                <div class="w-6 h-6 rounded bg-cyan-950 flex items-center justify-center text-slate-200"><i class="fa-solid fa-bottle-droplet"></i></div>
+                <div class="text-left"><div class="text-xs font-bold text-white">Decol (Ethanol)</div><div class="text-[10px] text-rose-400 font-bold reagent-hint">5-8s Real-Time</div></div>
+              </button>
+              <button onclick="equip('safranin')" class="equip-btn bg-slate-950 border border-slate-800 p-2 rounded-lg flex items-center gap-3 hover:bg-slate-800 transition" data-id="safranin">
+                <div class="w-6 h-6 rounded bg-pink-950 flex items-center justify-center text-pink-400"><i class="fa-solid fa-bottle-droplet"></i></div>
+                <div class="text-left"><div class="text-xs font-bold text-white">Safranin</div><div class="text-[10px] text-slate-500 reagent-hint">Counterstain (Sim 45s)</div></div>
+              </button>
+              <button onclick="equip('water')" class="equip-btn bg-slate-950 border border-slate-800 p-2 rounded-lg flex items-center gap-3 hover:bg-slate-800 transition" data-id="water">
+                <div class="w-6 h-6 rounded bg-blue-950 flex items-center justify-center text-cyan-400"><i class="fa-solid fa-shower"></i></div>
+                <div class="text-left"><div class="text-xs font-bold text-white">DI Water Wash</div><div class="text-[10px] text-slate-500 reagent-hint">Cascade rinse slide</div></div>
+              </button>
+              <button onclick="equip('paper')" class="equip-btn bg-slate-950 border border-slate-800 p-2 rounded-lg flex items-center gap-3 hover:bg-slate-800 transition" data-id="paper">
+                <div class="w-6 h-6 rounded bg-amber-950/60 flex items-center justify-center text-amber-200"><i class="fa-solid fa-scroll"></i></div>
+                <div class="text-left"><div class="text-xs font-bold text-white">Bibulous Paper</div><div class="text-[10px] text-slate-500 reagent-hint">Blot dry</div></div>
+              </button>
+            </div>
+          </div>
+
+          <div class="lg:col-span-9 bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col justify-between relative min-h-[580px] shadow" id="bench-surface">
+            
+            <div class="flex flex-wrap items-center justify-between gap-3 bg-slate-950/70 p-3 rounded-lg border border-slate-800 z-10 text-xs">
+              <div class="flex items-center gap-4">
+                <span><strong>Item in Hand:</strong> <span id="label-hand" class="text-teal-400 font-mono font-semibold">Empty Hand</span></span>
+                <span class="text-slate-700">|</span>
+                <span><strong>Loop:</strong> <span id="label-loop" class="text-slate-300 font-mono">Cold</span></span>
+                <span class="text-slate-700">|</span>
+                <span><strong>Smear State:</strong> <span id="label-smear" class="text-amber-300 font-mono">Clean Slide</span></span>
+              </div>
+              <div id="stain-timer" class="font-mono text-sm font-bold text-slate-400 bg-slate-900 px-3 py-1 rounded border border-slate-700 transition-colors">
+                Timer: 00s
+              </div>
+            </div>
+
+            <div class="relative flex-1 my-6">
+              <!-- Bunsen Burner -->
+              <div id="burner-zone" onclick="clickBurner()" onmouseenter="enterBurner()" class="absolute bottom-6 left-8 flex flex-col items-center cursor-pointer p-4 rounded-xl transition border border-transparent hover:border-slate-700/50">
+                <div id="flame-graphic" class="hidden flex-col items-center mb-0.5 pointer-events-none">
+                  <div class="w-7 h-16 bg-gradient-to-t from-blue-500 via-cyan-300 to-amber-200 rounded-t-full flame-active shadow-[0_0_20px_rgba(56,189,248,0.7)]"></div>
+                </div>
+                <div class="w-7 h-24 bg-gradient-to-r from-slate-400 via-slate-300 to-slate-500 border border-slate-600 rounded-sm shadow pointer-events-none"></div>
+                <div class="w-14 h-4 bg-slate-700 rounded-t-md pointer-events-none"></div>
+                <span class="text-xs font-semibold text-slate-300 mt-2 pointer-events-none" id="burner-text">Click to Ignite</span>
+                <span class="text-[10px] text-amber-400 font-mono pointer-events-none" id="heat-passes-indicator">Flame Passes: 0 / 3</span>
+              </div>
+
+              <!-- Agar Plate -->
+              <div onclick="clickPlate()" class="absolute top-4 left-1/3 flex flex-col items-center cursor-pointer group">
+                <div class="w-32 h-32 rounded-full bg-red-950 border-4 border-slate-700 group-hover:border-teal-500 shadow-2xl relative flex items-center justify-center overflow-hidden transition">
+                  <canvas id="plate-canvas" width="128" height="128" class="pointer-events-none"></canvas>
+                </div>
+                <span class="text-xs font-semibold text-slate-300 mt-2" id="plate-specimen-title">Culture Specimen</span>
+              </div>
+
+              <!-- Sink & Slide -->
+              <div id="sink-basin" onclick="clickSink(event)" class="absolute bottom-6 right-8 w-72 h-52 bg-slate-950 rounded-2xl border-2 border-slate-800 shadow-[inset_0_0_30px_rgba(0,0,0,0.85)] flex items-center justify-center overflow-hidden cursor-pointer hover:border-slate-700 transition">
+                <div class="absolute top-2 left-3 text-[10px] font-semibold text-slate-600 uppercase tracking-wider pointer-events-none">Staining Sink</div>
+                <div class="absolute w-full h-1.5 bg-slate-700 top-14 pointer-events-none"></div>
+                <div class="absolute w-full h-1.5 bg-slate-700 bottom-14 pointer-events-none"></div>
+
+                <div id="slide-station" onclick="clickSlide(event)" class="slide-in-bench flex items-center justify-center z-10 cursor-pointer">
+                  <div id="slide-flood" class="absolute inset-0 transition-colors duration-500 pointer-events-none" style="background-color: transparent;"></div>
+                  <div id="slide-wash-cascade" class="absolute inset-0 bg-gradient-to-b from-cyan-300/80 via-cyan-200/50 to-transparent -top-full hidden pointer-events-none z-20"></div>
+                  <div id="smear-puddle" class="w-12 h-8 rounded-full bg-transparent transition-colors duration-300 z-10 relative pointer-events-none"></div>
+                  <div class="absolute bottom-1 right-2 text-[8px] font-mono text-white/40 pointer-events-none z-10">FROSTED</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Bottom Control Bar -->
+            <div class="flex items-center justify-between pt-3 border-t border-slate-800 z-10 text-xs">
+              <div class="text-slate-400 flex items-center gap-2">
+                <i class="fa-solid fa-circle-info text-teal-400"></i>
+                <span id="bench-footer-tip">With an empty hand, click the slide to pick it up and sweep over flame.</span>
+              </div>
+              <button onclick="showSubTab('microscope')" class="bg-teal-600 hover:bg-teal-500 text-white font-semibold px-4 py-2 rounded-lg transition shadow flex items-center gap-2">
+                <span>View on Microscope</span>
+                <i class="fa-solid fa-arrow-right"></i>
+              </button>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW: MICROSCOPE -->
+      <section id="view-microscope" class="hidden space-y-4">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          
+          <div class="lg:col-span-8 bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col items-center shadow">
+            <div class="w-full flex justify-between items-center mb-3">
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-teal-400 animate-pulse"></span>
+                <h3 class="font-bold text-sm text-white">Optical Bench Viewport</h3>
+              </div>
+              <span id="microscope-error-alert" class="text-xs font-mono text-amber-400 bg-amber-950/60 px-2 py-0.5 rounded border border-amber-800 hidden">
+                Oil immersion required!
+              </span>
+            </div>
+
+            <!-- Enhanced Panning Canvas -->
+            <div class="w-[340px] h-[340px] sm:w-[420px] sm:h-[420px] rounded-full overflow-hidden border-8 border-slate-950 shadow-2xl bg-black flex items-center justify-center relative">
+              <canvas id="microscope-canvas" width="480" height="480" onmousedown="startDrag(event)" onmousemove="dragStage(event)" onmouseup="stopDrag()" onmouseleave="stopDrag()"></canvas>
+              <div class="absolute inset-0 pointer-events-none opacity-20 flex items-center justify-center">
+                <div class="w-full h-[1px] bg-teal-300"></div><div class="h-full w-[1px] bg-teal-300 absolute"></div>
+              </div>
+              <div class="absolute inset-0 pointer-events-none rounded-full shadow-[inset_0_0_80px_rgba(0,0,0,0.95)]"></div>
+              <div class="absolute bottom-4 text-[10px] text-white/40 pointer-events-none font-mono">Click & Drag to pan mechanical stage</div>
+            </div>
+
+            <!-- Mechanical Controls -->
+            <div class="w-full mt-5 grid grid-cols-1 sm:grid-cols-4 gap-3 pt-4 border-t border-slate-800">
+              <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                <label class="block text-[11px] font-semibold text-slate-400 mb-1.5">Objective Lens</label>
+                <div class="grid grid-cols-3 gap-1">
+                  <button class="lens-btn px-1.5 py-1 text-xs rounded bg-slate-800 text-slate-300 font-mono hover:bg-slate-700" data-lens="10">10x</button>
+                  <button class="lens-btn px-1.5 py-1 text-xs rounded bg-slate-800 text-slate-300 font-mono hover:bg-slate-700" data-lens="40">40x</button>
+                  <button class="lens-btn px-1.5 py-1 text-xs rounded bg-teal-600 text-white font-mono font-bold" data-lens="100">100x</button>
+                </div>
+              </div>
+              <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex flex-col justify-between">
+                <div class="flex justify-between items-center text-[10px]">
+                  <span class="text-slate-400 font-semibold">Immersion Oil</span>
+                  <span id="oil-status-badge" class="font-mono text-rose-400 font-bold">Dry</span>
+                </div>
+                <button id="btn-apply-oil" class="w-full bg-slate-800 hover:bg-amber-600 hover:text-white text-slate-200 text-[11px] font-semibold py-1 rounded-lg transition flex items-center justify-center gap-1">
+                  <i class="fa-solid fa-eye-dropper text-amber-400"></i> Add Drop
+                </button>
+              </div>
+              <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                <div class="flex justify-between text-[11px] mb-1">
+                  <span class="text-slate-400 font-semibold">Fine Focus</span>
+                  <span id="focus-readout" class="font-mono text-teal-400">50%</span>
+                </div>
+                <input id="micro-fine-slider" type="range" min="0" max="100" value="50" class="w-full accent-teal-500 bg-slate-800 h-2 rounded cursor-pointer">
+              </div>
+              <div class="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                <div class="flex justify-between text-[11px] mb-1">
+                  <span class="text-slate-400 font-semibold">Diaphragm</span>
+                  <span id="light-readout" class="font-mono text-amber-400">85%</span>
+                </div>
+                <input id="micro-light-slider" type="range" min="20" max="100" value="85" class="w-full accent-amber-500 bg-slate-800 h-2 rounded cursor-pointer">
+              </div>
+            </div>
+          </div>
+
+          <!-- Diagnostic Entry Panel -->
+          <div class="lg:col-span-4 bg-slate-900 border border-slate-800 rounded-xl p-5 shadow flex flex-col justify-between">
+            <div>
+              <h3 class="font-bold text-sm text-white border-b border-slate-800 pb-2 mb-3">Diagnostic Observations</h3>
+              
+              <div id="tech-audit-box" class="p-3 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-300 mb-4">
+                <span class="font-bold text-slate-200 block mb-1">Optical Status:</span>
+                <p id="micro-audit-note" class="text-slate-400">Adjust lens focus to bring bacteria into resolution.</p>
+              </div>
+
+              <div class="space-y-3 text-xs">
+                <div>
+                  <label class="block text-slate-300 font-semibold mb-1">1. Gram Reaction Assessment</label>
+                  <select id="report-gram" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-teal-500 focus:outline-none">
+                    <option value="">-- Choose Gram Reaction --</option>
+                    <option value="positive">Gram-Positive (Purple/Violet)</option>
+                    <option value="negative">Gram-Negative (Pink/Red)</option>
+                    <option value="mixed">Mixed Reaction</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-slate-300 font-semibold mb-1">2. Cellular Morphology</label>
+                  <select id="report-shape" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-teal-500 focus:outline-none">
+                    <option value="">-- Choose Morphology --</option>
+                    <option value="cocci_clusters">Cocci in clusters (Grape-like)</option>
+                    <option value="cocci_chains">Cocci in chains</option>
+                    <option value="cocci_pairs">Diplococci in pairs (Lancet-shaped)</option>
+                    <option value="diplococci">Diplococci (Kidney-bean shaped)</option>
+                    <option value="rods_gpos">Large bacilli (Thick / Boxcar rods)</option>
+                    <option value="rods_gneg">Slender bacilli (Small rods)</option>
+                    <option value="curved_rods">Curved bacilli (Comma-shaped)</option>
+                    <option value="spirochetes">Spirochetes (Helical / Corkscrew)</option>
+                    <option value="mixed_cocci_rods">Mixed: Cocci & Bacilli</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-4">
+              <div id="immediate-feedback-box" class="mb-3 p-3 rounded-lg hidden text-xs"></div>
+              
+              <!-- Contextual Button based on Phase -->
+              <button id="btn-check-findings" onclick="processFindings()" class="w-full bg-teal-600 hover:bg-teal-500 text-white font-bold py-3 rounded-lg shadow-lg transition flex items-center justify-center gap-2 text-xs">
+                <span>Check Findings</span>
+                <i class="fa-solid fa-check"></i>
+              </button>
+
+              <button id="btn-submit-exam" onclick="submitFinalReport()" class="hidden w-full bg-rose-600 hover:bg-rose-500 text-white font-bold py-3 rounded-lg shadow-lg transition flex items-center justify-center gap-2 text-xs">
+                <span>Grade & Generate Official PDF Report</span>
+                <i class="fa-solid fa-file-pdf"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div> <!-- END OF APP CONTAINER -->
+
+  <!-- ========================================================================= -->
+  <!-- OFFICIAL A4 PORTRAIT PRINTABLE REPORT                                     -->
+  <!-- ========================================================================= -->
+  <div id="print-area" class="hidden">
+    <!-- Header with Custom Vector Emblem -->
+    <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #0f766e; padding-bottom: 12px; margin-bottom: 16px;">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <svg width="48" height="48" viewBox="0 0 100 100" fill="none" stroke="#0f766e" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M 20 85 L 80 85" stroke-width="10"/>
+          <path d="M 35 85 L 35 60" />
+          <path d="M 35 60 C 20 30 30 15 50 15 L 60 15 L 60 30" />
+          <path d="M 50 60 L 80 60" />
+          <path d="M 50 30 L 70 30 L 70 45 L 50 45 Z" />
+          <path d="M 55 45 L 65 45 L 68 55 L 52 55 Z" fill="#0f766e" />
+          <path d="M 55 15 L 65 15 L 65 5 L 55 5 Z" />
+          <circle cx="35" cy="50" r="8" fill="#d4af37" stroke="#d4af37"/>
+        </svg>
+        <div>
+          <h1 style="font-size: 15px; font-weight: 800; margin: 0; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px;">Mohammad Al-Mana College for Medical Sciences</h1>
+          <h2 style="font-size: 12px; color: #334155; margin: 2px 0; font-weight: 600;">Respiratory Therapy Department • MICR 210: Microbiology Lab</h2>
+          <p style="font-size: 10px; color: #64748b; margin: 0;">Official Clinical Gram Stain Practicum Evaluation</p>
+        </div>
+      </div>
+      <div style="text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 11px;">
+        <p style="margin: 0;"><strong>Course Director:</strong> Dr. Hassan Ali Al Fadhel</p>
+        <p style="margin: 2px 0 0 0; color: #0f766e; font-weight: bold;">Fall 2026-27 Practicum</p>
+        <p style="margin: 2px 0 0 0; color: #64748b;">Date: <span id="print-date">--</span></p>
+      </div>
+    </div>
+
+    <!-- Student & Record Summary Strip -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; background-color: #f8fafc; border: 1px solid #cbd5e1; padding: 10px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 11px; margin-bottom: 16px;">
+      <div>
+        <p style="margin: 0; color: #64748b;">STUDENT NAME</p>
+        <p style="margin: 2px 0 0 0; font-weight: bold; font-size: 12px;" id="print-student-name">--</p>
+      </div>
+      <div>
+        <p style="margin: 0; color: #64748b;">STUDENT / SECTION ID</p>
+        <p style="margin: 2px 0 0 0; font-weight: bold; font-size: 12px;" id="print-student-id">--</p>
+      </div>
+      <div style="text-align: right;">
+        <p style="margin: 0; color: #64748b;">ASSIGNED ISOLATE</p>
+        <p style="margin: 2px 0 0 0; font-weight: bold; font-size: 12px; color: #b91c1c;" id="print-isolate-id">--</p>
+      </div>
+    </div>
+
+    <!-- Overall Practicum Score Banner -->
+    <div style="display: flex; align-items: center; justify-content: space-between; border: 1px solid #94a3b8; padding: 10px 14px; border-radius: 4px; margin-bottom: 16px; background-color: #f1f5f9;">
+      <div>
+        <span style="font-size: 11px; font-weight: bold; text-transform: uppercase; color: #475569;">Performance Evaluation:</span>
+        <span style="font-size: 12px; font-weight: bold; margin-left: 8px;" id="print-eval-status">--</span>
+      </div>
+      <div style="text-align: right;">
+        <span style="font-size: 11px; font-weight: bold; color: #475569;">FINAL SCORE:</span>
+        <span style="font-size: 18px; font-weight: 800; font-family: 'JetBrains Mono', monospace; color: #0f766e; margin-left: 6px;" id="print-final-score">-- / 100</span>
+      </div>
+    </div>
+
+    <!-- Section I: Morphological Findings -->
+    <div style="margin-bottom: 16px;">
+      <h3 style="font-size: 12px; font-weight: bold; border-bottom: 1px solid #94a3b8; padding-bottom: 4px; margin: 0 0 8px 0; color: #0f172a; text-transform: uppercase;">I. Diagnostic Observations & Deduction</h3>
+      <table style="width: 100%; text-align: left; border-collapse: collapse; font-size: 11px;">
+        <thead>
+          <tr style="background-color: #e2e8f0;">
+            <th style="padding: 6px 8px; border: 1px solid #94a3b8; width: 35%;">Parameter</th>
+            <th style="padding: 6px 8px; border: 1px solid #94a3b8;">Recorded Observation</th>
+            <th style="padding: 6px 8px; border: 1px solid #94a3b8; width: 22%; text-align: center;">Evaluation</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="padding: 6px 8px; border: 1px solid #94a3b8; font-weight: bold;">Gram Reaction</td>
+            <td style="padding: 6px 8px; border: 1px solid #94a3b8;" id="print-gram-res">--</td>
+            <td style="padding: 6px 8px; border: 1px solid #94a3b8; text-align: center; font-weight: bold;" id="print-gram-grade">--</td>
+          </tr>
+          <tr>
+            <td style="padding: 6px 8px; border: 1px solid #94a3b8; font-weight: bold;">Cellular Morphology</td>
+            <td style="padding: 6px 8px; border: 1px solid #94a3b8;" id="print-shape-res">--</td>
+            <td style="padding: 6px 8px; border: 1px solid #94a3b8; text-align: center; font-weight: bold;" id="print-shape-grade">--</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Section II: Technical Procedure Audit -->
+    <div style="margin-bottom: 16px;">
+      <h3 style="font-size: 12px; font-weight: bold; border-bottom: 1px solid #94a3b8; padding-bottom: 4px; margin: 0 0 8px 0; color: #0f172a; text-transform: uppercase;">II. Technical Audit & Protocol Fidelity</h3>
+      <div id="print-audit-notes" style="font-size: 11px; line-height: 1.5; color: #334155; border: 1px solid #cbd5e1; padding: 10px; border-radius: 4px; background-color: #f8fafc;">
+        <!-- Filled by JS -->
+      </div>
+    </div>
+
+    <!-- Section III: Procedural Log -->
+    <div style="margin-bottom: 24px;">
+      <h3 style="font-size: 12px; font-weight: bold; border-bottom: 1px solid #94a3b8; padding-bottom: 4px; margin: 0 0 6px 0; color: #0f172a; text-transform: uppercase;">III. Sequential Bench Action Audit Trail</h3>
+      <p style="font-size: 11px; color: #64748b; margin-bottom: 8px;">Timestamps represent the exact sequence of lab actions performed during the blinded exam.</p>
+      <div id="print-action-log" style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; border: 1px solid #cbd5e1; padding: 8px; border-radius: 4px; background-color: #fafafa; line-height: 1.35; max-height: 240px; overflow: hidden;">
+        <!-- Filled by JS -->
+      </div>
+    </div>
+
+    <!-- Sign-off Block -->
+    <div style="display: flex; justify-content: space-between; align-items: flex-end; padding-top: 12px; font-size: 11px;">
+      <div>
+        <p style="margin: 0; color: #64748b;">Pre-Lab Quiz Score: <span id="print-quiz-score" style="font-weight: bold; color: #0f766e;">--</span></p>
+        <p style="margin: 2px 0 0 0; color: #64748b;">Phase 1 Tutorial: <span id="print-training-status" style="font-weight: bold; color: #0f766e;">--</span></p>
+        <p style="margin: 2px 0 0 0; color: #64748b;">Verification ID: <span id="print-cert-id" style="font-family: 'JetBrains Mono', monospace; font-weight: bold;">--</span></p>
+      </div>
+      <div style="text-align: center; width: 220px;">
+        <div style="border-top: 1px solid #0f172a; margin-bottom: 4px;"></div>
+        <p style="margin: 0; font-weight: bold; color: #0f172a;">Instructor Verification</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* ------------------------------------------------------------------------ */
+    /* Audio Synth                                                              */
+    /* ------------------------------------------------------------------------ */
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    let isSoundOn = true;
+    
+    function playTone(freq, type, duration, gainVal = 0.1) {
+      if (!isSoundOn) return;
+      try {
+        const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
+        osc.type = type; osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gain.gain.setValueAtTime(gainVal, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(); osc.stop(audioCtx.currentTime + duration);
+      } catch (e) {}
+    }
+
+    function soundIgnite() {
+      if (!isSoundOn) return;
+      try {
+        const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.3, audioCtx.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < buf.length; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (buf.length * 0.2));
+        const src = audioCtx.createBufferSource(); src.buffer = buf;
+        const g = audioCtx.createGain(); g.gain.value = 0.12;
+        src.connect(g); g.connect(audioCtx.destination); src.start();
+      } catch (e) {}
+    }
+
+    function soundDrop() { playTone(650, 'sine', 0.1, 0.08); }
+    function soundPass() { playTone(420, 'triangle', 0.18, 0.12); }
+    function soundRinse() { playTone(300, 'triangle', 0.4, 0.05); }
+    function soundSuccess() { playTone(523, 'triangle', 0.2, 0.1); setTimeout(()=>playTone(659,'triangle',0.3,0.1),150); }
+    function soundError() { playTone(220, 'square', 0.3, 0.1); }
+
+    document.getElementById('btn-toggle-sound').addEventListener('click', () => {
+      isSoundOn = !isSoundOn;
+      document.getElementById('sound-icon').className = isSoundOn ? 'fa-solid fa-volume-high text-teal-400' : 'fa-solid fa-volume-xmark text-slate-500';
+      document.getElementById('sound-text').textContent = isSoundOn ? 'Sound ON' : 'Sound OFF';
+      if (isSoundOn) soundDrop();
+    });
+
+    /* ------------------------------------------------------------------------ */
+    /* Taxa Database                                                            */
+    /* ------------------------------------------------------------------------ */
+    const PATHOGENS = {
+      'Staphylococcus': { name: 'S. aureus', gram: 'positive', shape: 'cocci_clusters', color: '#6d28d9', renderType: 'clusters' },
+      'E.coli': { name: 'E. coli', gram: 'negative', shape: 'rods_gneg', color: '#e11d48', renderType: 'rods_small' },
+      'Streptococcus': { name: 'S. pyogenes', gram: 'positive', shape: 'cocci_chains', color: '#6d28d9', renderType: 'chains' },
+      'Streptococcus pneumoniae': { name: 'S. pneumoniae', gram: 'positive', shape: 'cocci_pairs', color: '#6d28d9', renderType: 'pairs_lancet' },
+      'Neisseria': { name: 'N. gonorrhoeae', gram: 'negative', shape: 'diplococci', color: '#e11d48', renderType: 'pairs_kidney' },
+      'Bacillus': { name: 'Bacillus spp.', gram: 'positive', shape: 'rods_gpos', color: '#6d28d9', renderType: 'rods_large' },
+      'Vibrio': { name: 'Vibrio spp.', gram: 'negative', shape: 'curved_rods', color: '#e11d48', renderType: 'curved' },
+      'Treponema': { name: 'Treponema spp.', gram: 'negative', shape: 'spirochetes', color: '#f43f5e', renderType: 'spirochete' },
+      'Mixed': { name: 'Mixed (Staph + E. coli)', gram: 'mixed', shape: 'mixed_cocci_rods', color: 'mixed', renderType: 'mixed' }
+    };
+
+    /* ------------------------------------------------------------------------ */
+    /* Phase & State Logic                                                      */
+    /* ------------------------------------------------------------------------ */
+    const GUIDED_STEPS = [
+      { id: 1, text: "Click the Bunsen Burner to ignite the flame cone." },
+      { id: 2, text: "Equip the Inoculating Loop from the rack and sweep it over the burner flame to sterilize." },
+      { id: 3, text: "Wait 5 seconds for the red-hot loop to cool to room temperature." },
+      { id: 4, text: "Equip the Saline Dropper and click the glass slide in the sink to dispense a drop." },
+      { id: 5, text: "Equip the cooled loop and click the Culture Plate to sample a colony." },
+      { id: 6, text: "Click the slide with the loaded loop to emulsify the bacteria." },
+      { id: 7, text: "Wait for the smear to air-dry completely (matte white haze visible)." },
+      { id: 8, text: "Empty your hand [Esc], click the slide to pick it up, and sweep it through the flame 3 times to heat-fix." },
+      { id: 9, text: "Return slide to sink. Equip Crystal Violet and flood for 60s." },
+      { id: 10, text: "Equip DI Water and click the slide to rinse the primary stain." },
+      { id: 11, text: "Equip Gram's Iodine (mordant) and flood the slide for 60s." },
+      { id: 12, text: "Equip DI Water and rinse the mordant." },
+      { id: 13, text: "CRITICAL: Equip Decolorizer (Ethanol) and flood for exactly 5 to 8 seconds!" },
+      { id: 14, text: "Equip DI Water immediately and rinse to halt decolorization." },
+      { id: 15, text: "Equip Safranin and flood the slide for 45s." },
+      { id: 16, text: "Equip DI Water and rinse the counterstain." },
+      { id: 17, text: "Equip Bibulous Paper and click the slide to blot dry." },
+      { id: 18, text: "Switch to 'Optical Microscope' tab to evaluate your specimen." }
+    ];
+
+    let currentPhase = 'guided'; 
+    let guidedStepIdx = 0;
+    let trainingStatus = 'Skipped by Student'; // Default until they actually hit step 18
+    let quizScore = 0;
+    let studentName = '';
+    let studentIdNum = '';
+    
+    let activeCase = { id: 'Staphylococcus', data: PATHOGENS['Staphylococcus'] };
+    let examIdTag = 'TRAINING-REF';
+    let handItem = null;
+    let timerInt = null;
+    let timerSec = 0;
+    let lastFlamePass = 0;
+
+    let sim = {
+      burnerLit: false, loopState: 'cold', hasSaline: false, hasColony: false,
+      isSmeared: false, isAirDried: false, airDryTimer: 0, heatPasses: 0,
+      isScorched: false, cellsWashedOff: false, activeReagent: null, blotted: false,
+      cvSec: 0, iodineSec: 0, decolSec: 0, safraninSec: 0,
+      micro: { mag: 100, focus: 50, light: 85, hasOil: false },
+      actionLog: [],
+      slideCells: [],
+      reagentOrderApplied: [] // Used to penalize wrong sequencing during exam
+    };
+
+    let stageX = -120;
+    let stageY = 80;
+    let isDraggingStage = false;
+    let lastMouse = {x: 0, y: 0};
+
+    function logAction(msg, type = 'normal') {
+      const time = new Date().toLocaleTimeString([], { hour12: false });
+      sim.actionLog.push({ text: `[${time}] ${msg}`, type });
+    }
+
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      
+      let bg = 'bg-slate-800 border-slate-700 text-slate-200';
+      let icon = 'fa-circle-info text-teal-400';
+      if (type === 'success') { bg = 'bg-emerald-950 border-emerald-800 text-emerald-200'; icon = 'fa-check text-emerald-400'; }
+      if (type === 'error') { bg = 'bg-rose-950 border-rose-800 text-rose-200'; icon = 'fa-triangle-exclamation text-rose-400'; }
+
+      toast.className = `flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg border text-xs font-semibold transition-all duration-300 transform translate-y-4 opacity-0 ${bg}`;
+      toast.innerHTML = `<i class="fa-solid ${icon}"></i> <span>${message}</span>`;
+      
+      container.appendChild(toast);
+      
+      requestAnimationFrame(() => {
+        toast.classList.remove('translate-y-4', 'opacity-0');
+      });
+
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('protocol-modal').classList.remove('hidden'); 
+      initMicroscopeControls();
+      drawPlate();
+      updateUI();
+      updatePhaseUI();
+    });
+
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape') clearHand(); });
+
+    /* Sub-Tab Navigation */
+    function showSubTab(tabId) {
+      document.getElementById('view-bench').classList.add('hidden');
+      document.getElementById('view-microscope').classList.add('hidden');
+      
+      document.getElementById('nav-bench').className = 'px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 rounded-t-lg transition flex items-center gap-2 whitespace-nowrap';
+      document.getElementById('nav-scope').className = 'px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 rounded-t-lg transition flex items-center gap-2 whitespace-nowrap';
+      
+      document.getElementById(`view-${tabId}`).classList.remove('hidden');
+      
+      if (tabId === 'bench') document.getElementById('nav-bench').className = 'px-4 py-2 text-sm font-semibold border-b-2 border-teal-500 text-teal-400 bg-slate-900/80 rounded-t-lg transition flex items-center gap-2 whitespace-nowrap';
+      if (tabId === 'microscope') document.getElementById('nav-scope').className = 'px-4 py-2 text-sm font-semibold border-b-2 border-teal-500 text-teal-400 bg-slate-900/80 rounded-t-lg transition flex items-center gap-2 whitespace-nowrap';
+
+      if(tabId === 'microscope') renderMicroscope();
+    }
+
+    /* Phase Transitions */
+    function updatePhaseUI() {
+      const badge = document.getElementById('badge-phase');
+      const navTabs = document.getElementById('app-nav-tabs');
+
+      // EXAM MODE DYNAMICS (Shuffling and hiding text)
+      const hints = document.querySelectorAll('.reagent-hint');
+      const rack = document.getElementById('reagent-rack');
+      const reagents = Array.from(rack.children);
+      
+      if (currentPhase === 'exam') {
+        hints.forEach(el => el.classList.add('hidden'));
+        // Shuffle rack
+        reagents.sort(() => Math.random() - 0.5);
+        reagents.forEach((btn, idx) => btn.style.order = idx);
+      } else {
+        hints.forEach(el => el.classList.remove('hidden'));
+        // Reset rack
+        reagents.forEach((btn) => btn.style.order = 0);
+      }
+
+      if (currentPhase === 'guided') {
+        badge.textContent = 'PHASE 1: GUIDED TUTORIAL';
+        badge.className = 'text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-teal-950 text-teal-300 border border-teal-700';
+        navTabs.classList.remove('hidden');
+        document.getElementById('guided-instruction-bar').classList.remove('hidden');
+        document.getElementById('guided-instruction-bar').classList.add('flex');
+        
+        document.getElementById('btn-check-findings').classList.remove('hidden');
+        document.getElementById('btn-submit-exam').classList.add('hidden');
+        
+        showSubTab('bench');
+      } 
+      else if (currentPhase === 'exam') {
+        badge.textContent = `EXAM MODE: ${examIdTag}`;
+        badge.className = 'text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-700';
+        navTabs.classList.remove('hidden');
+        
+        document.getElementById('guided-instruction-bar').classList.add('hidden');
+        document.getElementById('bench-footer-tip').innerHTML = '<span class="text-rose-400 font-bold"><i class="fa-solid fa-triangle-exclamation"></i> Assessment Active: Hints disabled. Reagents randomized.</span>';
+        document.getElementById('plate-specimen-title').textContent = examIdTag;
+        
+        document.getElementById('btn-check-findings').classList.add('hidden');
+        document.getElementById('btn-submit-exam').classList.remove('hidden');
+        
+        showSubTab('bench');
+      }
+    }
+
+    function startGuidedPhase(sampleKey) {
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      activeCase = { id: sampleKey, data: PATHOGENS[sampleKey] };
+      document.getElementById('plate-specimen-title').textContent = activeCase.data.name;
+      document.getElementById('protocol-modal').classList.add('hidden');
+      document.getElementById('protocol-modal').classList.remove('flex');
+      
+      // Reset variables in case they are re-doing practice
+      currentPhase = 'guided';
+      guidedStepIdx = 0;
+      document.getElementById('immediate-feedback-box').classList.add('hidden');
+      document.getElementById('report-gram').value = "";
+      document.getElementById('report-shape').value = "";
+      
+      logAction("Simulator loaded into Phase 1 (Practice Mode).");
+      logAction(`Started Guided Practice with sample: ${sampleKey}`);
+      updateGuidedPrompt();
+      resetBench(true);
+      drawPlate();
+      updatePhaseUI();
+    }
+
+    // Step 1 of Evaluation Gateway: Prompt for Name and ID
+    function startExamPrompt() {
+      if (currentPhase === 'guided' && trainingStatus !== 'Completed Successfully') {
+        trainingStatus = 'Skipped / Partial Practice';
+        logAction("Guided training bypassed by student.", "info");
+      }
+      document.getElementById('protocol-modal').classList.add('hidden');
+      document.getElementById('protocol-modal').classList.remove('flex');
+      document.getElementById('briefing-modal').classList.remove('hidden');
+      document.getElementById('briefing-modal').classList.add('flex');
+    }
+
+    // Step 2 of Evaluation Gateway: Validate ID and open Quiz
+    function validateAndStartQuiz() {
+      const name = document.getElementById('exam-student-name').value.trim();
+      const id = document.getElementById('exam-student-id').value.trim();
+      if (!name || !id) {
+        document.getElementById('briefing-error').classList.remove('hidden');
+        return;
+      }
+      studentName = name;
+      studentIdNum = id;
+
+      // Close Briefing, Open Quiz
+      document.getElementById('briefing-modal').classList.add('hidden');
+      document.getElementById('briefing-modal').classList.remove('flex');
+      document.getElementById('quiz-modal').classList.remove('hidden');
+      document.getElementById('quiz-modal').classList.add('flex');
+    }
+
+    // Step 3 of Evaluation Gateway: Submit Quiz & Launch Practicum
+    function submitQuiz() {
+      // Evaluate quietly (does not block progress)
+      const q1 = document.querySelector('input[name="q1"]:checked')?.value;
+      const q2 = document.querySelector('input[name="q2"]:checked')?.value;
+      const q3 = document.querySelector('input[name="q3"]:checked')?.value;
+      const q4 = document.querySelector('input[name="q4"]:checked')?.value;
+      const q5 = document.querySelector('input[name="q5"]:checked')?.value;
+      const o1 = document.getElementById('q-order-1').value;
+      const o2 = document.getElementById('q-order-2').value;
+      const o3 = document.getElementById('q-order-3').value;
+      const o4 = document.getElementById('q-order-4').value;
+      
+      let correct = 0;
+      let total = 9; // 4 order steps + 5 questions
+      
+      if (o1 === 'cv') correct++;
+      if (o2 === 'iodine') correct++;
+      if (o3 === 'decol') correct++;
+      if (o4 === 'saf') correct++;
+      
+      if (q1 === 'b') correct++;
+      if (q2 === 'a') correct++;
+      if (q3 === 'b') correct++;
+      if (q4 === 'a') correct++;
+      if (q5 === 'b') correct++;
+
+      quizScore = Math.round((correct / total) * 100);
+
+      document.getElementById('quiz-modal').classList.add('hidden');
+      document.getElementById('quiz-modal').classList.remove('flex');
+      
+      soundSuccess();
+      showToast('Theory Quiz submitted. Entering Blinded Practicum.', 'info');
+      startExamPracticum();
+    }
+
+    function startExamPracticum() {
+      currentPhase = 'exam';
+      const keys = ['Staphylococcus', 'E.coli', 'Streptococcus', 'Neisseria', 'Bacillus', 'Vibrio', 'Treponema'];
+      const randKey = keys[Math.floor(Math.random() * keys.length)];
+      activeCase = { id: randKey, data: PATHOGENS[randKey] };
+      examIdTag = `UNKNOWN-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      document.getElementById('report-gram').value = "";
+      document.getElementById('report-shape').value = "";
+      document.getElementById('immediate-feedback-box').classList.add('hidden');
+
+      resetBench(true);
+      updatePhaseUI();
+      drawPlate();
+      
+      logAction(`Blinded Unknown Exam Commenced. Active Isolate: ${examIdTag}`);
+    }
+
+    function advanceGuidedStep(expectedStep) {
+      if (currentPhase !== 'guided') return;
+      if (guidedStepIdx === expectedStep - 1) {
+        guidedStepIdx++;
+        if (guidedStepIdx >= GUIDED_STEPS.length - 1) {
+          trainingStatus = 'Completed Successfully';
+        }
+        updateGuidedPrompt();
+      }
+    }
+
+    function updateGuidedPrompt() {
+      if (currentPhase !== 'guided') return;
+      const step = GUIDED_STEPS[guidedStepIdx];
+      document.getElementById('guide-step-num').textContent = step.id;
+      document.getElementById('guide-step-text').innerHTML = step.text;
+    }
+
+    function resetBench(resetHistory = true) {
+      sim = {
+        burnerLit: false, loopState: 'cold', hasSaline: false, hasColony: false,
+        isSmeared: false, isAirDried: false, airDryTimer: 0, heatPasses: 0,
+        isScorched: false, cellsWashedOff: false, activeReagent: null, blotted: false,
+        cvSec: 0, iodineSec: 0, decolSec: 0, safraninSec: 0,
+        micro: { mag: 100, focus: 50, light: 85, hasOil: false },
+        actionLog: resetHistory ? [] : sim.actionLog,
+        slideCells: [],
+        reagentOrderApplied: [] // Used to penalize wrong sequencing during exam
+      };
+      
+      stageX = -120; 
+      stageY = 80;
+
+      stopTimer();
+      clearHand();
+      document.getElementById('flame-graphic').classList.add('hidden');
+      document.getElementById('burner-text').textContent = 'Click to Ignite';
+      document.getElementById('immediate-feedback-box').classList.add('hidden');
+      
+      document.getElementById('oil-status-badge').textContent = 'Dry';
+      document.getElementById('oil-status-badge').className = 'font-mono text-rose-400 font-bold';
+      document.getElementById('micro-fine-slider').value = 50;
+      updateUI();
+    }
+
+    /* ------------------------------------------------------------------------ */
+    /* Cursor Tracker & Equip Mechanics                                         */
+    /* ------------------------------------------------------------------------ */
+    const cursorEl = document.getElementById('cursor-item');
+    const benchSurface = document.getElementById('bench-surface');
+
+    benchSurface.addEventListener('mousemove', (e) => {
+      if (handItem) { cursorEl.style.left = e.clientX + 'px'; cursorEl.style.top = e.clientY + 'px'; }
+    });
+    benchSurface.addEventListener('mouseenter', () => { if (handItem) cursorEl.style.display = 'block'; });
+    benchSurface.addEventListener('mouseleave', () => { cursorEl.style.display = 'none'; });
+
+    function clearHand() {
+      handItem = null;
+      cursorEl.style.display = 'none';
+      cursorEl.classList.remove('is-slide');
+      document.querySelectorAll('.equip-btn').forEach(b => b.classList.remove('ring-2', 'ring-teal-500'));
+      document.getElementById('slide-station').classList.remove('opacity-0', 'pointer-events-none');
+      updateUI();
+    }
+
+    function equip(itemKey) {
+      if (currentPhase === 'guided') {
+        if (itemKey === 'loop' && guidedStepIdx < 1) { showToast("Ignite the Bunsen Burner first!", 'error'); return; }
+        if (itemKey === 'saline' && guidedStepIdx < 3) { showToast("Wait for loop sterilization to finish!", 'error'); return; }
+        if (['cv','iodine','decol','safranin'].includes(itemKey) && guidedStepIdx < 8) {
+          showToast("Prepare, air-dry, and heat-fix smear before touching reagents!", 'error'); return;
+        }
+      }
+
+      if (handItem === itemKey) { clearHand(); return; }
+      handItem = itemKey;
+      document.querySelectorAll('.equip-btn').forEach(b => b.classList.remove('ring-2', 'ring-teal-500'));
+      const btn = document.querySelector(`[data-id="${itemKey}"]`);
+      if (btn) btn.classList.add('ring-2', 'ring-teal-500');
+
+      if (itemKey === 'slide') cursorEl.classList.add('is-slide');
+      else cursorEl.classList.remove('is-slide');
+
+      updateCursorIcon();
+      cursorEl.style.display = 'block';
+      updateUI();
+    }
+
+    function updateCursorIcon() {
+      if (!handItem) return;
+      if (handItem === 'slide') {
+        const flood = document.getElementById('slide-flood').style.backgroundColor || 'transparent';
+        const puddle = document.getElementById('smear-puddle').style.backgroundColor || 'transparent';
+        cursorEl.innerHTML = `
+          <div class="w-40 h-16 bg-slate-200/20 border-2 border-teal-400 rounded shadow-2xl relative overflow-hidden flex items-center justify-center backdrop-blur-sm">
+            <div class="absolute inset-0 transition-colors" style="background-color: ${flood}"></div>
+            <div class="w-12 h-8 rounded-full relative z-10 transition-colors" style="background-color: ${puddle}"></div>
+          </div>
+        `;
+        return;
+      }
+      
+      const dropOffset = `style="position:absolute; top:-4px; left:-4px;"`;
+      const icons = {
+        loop: `<svg width="60" height="140" viewBox="0 0 60 140" style="position:absolute; top:-8px; left:-8px; transform: rotate(-25deg);"><rect x="26" y="60" width="8" height="80" rx="2" fill="#334155" stroke="#1e293b" stroke-width="1"/><line x1="30" y1="20" x2="30" y2="60" stroke="#94a3b8" stroke-width="2"/><circle cx="30" cy="14" r="6" stroke="${sim.loopState === 'hot' ? '#ef4444' : (sim.loopState === 'colony' ? '#f59e0b' : '#94a3b8')}" stroke-width="2" fill="none" class="transition-colors duration-300" ${sim.loopState === 'hot' ? 'style="filter: drop-shadow(0 0 6px #ef4444);"' : ''}/>${sim.loopState === 'colony' ? '<circle cx="30" cy="14" r="3" fill="#fef08a"/>' : ''}</svg>`,
+        saline: `<i class="fa-solid fa-eye-dropper text-blue-400 text-4xl drop-shadow-lg" ${dropOffset}></i>`,
+        cv: `<i class="fa-solid fa-bottle-droplet text-purple-500 text-4xl drop-shadow-lg" ${dropOffset}></i>`,
+        iodine: `<i class="fa-solid fa-bottle-droplet text-amber-500 text-4xl drop-shadow-lg" ${dropOffset}></i>`,
+        decol: `<i class="fa-solid fa-bottle-droplet text-slate-100 text-4xl drop-shadow-lg" ${dropOffset}></i>`,
+        safranin: `<i class="fa-solid fa-bottle-droplet text-pink-500 text-4xl drop-shadow-lg" ${dropOffset}></i>`,
+        water: `<i class="fa-solid fa-shower text-cyan-400 text-4xl drop-shadow-lg" ${dropOffset}></i>`,
+        paper: `<i class="fa-solid fa-scroll text-amber-200 text-4xl drop-shadow-lg" ${dropOffset}></i>`
+      };
+      cursorEl.innerHTML = icons[handItem];
+    }
+
+    /* ------------------------------------------------------------------------ */
+    /* Bench Interactions                                                       */
+    /* ------------------------------------------------------------------------ */
+    function clickBurner() {
+      if (handItem === null) {
+        sim.burnerLit = !sim.burnerLit;
+        document.getElementById('flame-graphic').classList.toggle('hidden', !sim.burnerLit);
+        document.getElementById('burner-text').textContent = sim.burnerLit ? 'Extinguish Burner' : 'Click to Ignite';
+        if (sim.burnerLit) { soundIgnite(); logAction("Bunsen burner ignited."); advanceGuidedStep(1); }
+        else { logAction("Bunsen burner extinguished."); }
+        updateUI();
+      }
+    }
+
+    function enterBurner() {
+      if (!sim.burnerLit) return;
+      if (handItem === 'loop') {
+        if (sim.loopState !== 'hot') {
+          sim.loopState = 'hot'; 
+          updateCursorIcon(); 
+          updateUI(); // Immediately reflect Hot state in top bar
+          soundPass();
+          if (currentPhase === 'guided') showToast('Loop flamed red-hot. Cooling takes 5s...', 'success');
+          logAction("Inoculating loop flamed to incandescence.");
+          advanceGuidedStep(2);
+          
+          setTimeout(() => {
+            if (sim.loopState === 'hot') {
+              sim.loopState = 'cold';
+              if (handItem === 'loop') updateCursorIcon();
+              updateUI(); 
+              if (currentPhase === 'guided') showToast('Loop has cooled to room temperature.', 'info');
+              advanceGuidedStep(3);
+            }
+          }, 5000);
+        }
+      } 
+      else if (handItem === 'slide') {
+        const now = Date.now();
+        if (now - lastFlamePass > 800) { 
+          if (!sim.isSmeared) return;
+          if (!sim.isAirDried) {
+            if (currentPhase === 'guided') showToast('CRITICAL: Heating a wet slide boils and ruptures cells!', 'error');
+            sim.isScorched = true;
+            logAction("FATAL ERROR: Wet smear passed through flame.", 'error');
+          } else {
+            sim.heatPasses++; soundPass();
+            if (currentPhase === 'guided') showToast(`Flame pass ${sim.heatPasses}/3`, 'info');
+            logAction(`Slide passed through flame (Pass #${sim.heatPasses}).`);
+            if (sim.heatPasses >= 3) advanceGuidedStep(8);
+            if (sim.heatPasses > 4) {
+              sim.isScorched = true; 
+              if (currentPhase === 'guided') showToast('WARNING: Slide scorched by excessive heat!', 'error');
+              logAction("FATAL ERROR: Slide scorched.", 'error');
+            }
+          }
+          lastFlamePass = now; updateUI(); updateCursorIcon();
+        }
+      }
+    }
+
+    function clickSink(e) {
+      if (handItem === 'slide') {
+        e.stopPropagation();
+        clearHand(); 
+        if (currentPhase === 'guided') showToast('Slide placed on staining rack.', 'info');
+        if (currentPhase === 'guided' && sim.heatPasses >= 3) advanceGuidedStep(8);
+      }
+    }
+
+    function clickSlide(e) {
+      e.stopPropagation(); 
+
+      if (handItem === null) {
+        if (currentPhase === 'guided' && guidedStepIdx < 7) {
+          showToast("Prepare and air-dry smear before picking up slide!", 'error'); return;
+        }
+        document.getElementById('slide-station').classList.add('opacity-0', 'pointer-events-none');
+        equip('slide'); 
+        if (currentPhase === 'guided') showToast('Slide picked up. Sweep over flame to fix.', 'info');
+        return;
+      }
+
+      if (handItem === 'slide') {
+        clearHand(); 
+        if (currentPhase === 'guided') showToast('Slide returned to sink.', 'info');
+        if (currentPhase === 'guided' && sim.heatPasses >= 3) advanceGuidedStep(8);
+        return;
+      }
+
+      if (handItem === 'saline') {
+        if (sim.hasSaline) { if (currentPhase === 'guided') showToast('Saline drop already placed.', 'error'); return; }
+        sim.hasSaline = true; soundDrop(); 
+        if (currentPhase === 'guided') showToast('10 µL saline placed.', 'success');
+        advanceGuidedStep(4);
+      }
+      else if (handItem === 'loop') {
+        if (!sim.hasSaline) { if (currentPhase === 'guided') showToast('Need saline drop first.', 'error'); return; }
+        if (sim.loopState !== 'colony') { if (currentPhase === 'guided') showToast('Touch a colony with the loop first!', 'error'); return; }
+        
+        sim.hasColony = true; sim.isSmeared = true; sim.loopState = 'cold';
+        if (handItem === 'loop') updateCursorIcon();
+        soundDrop(); 
+        if (currentPhase === 'guided') showToast('Colony emulsified into smear.', 'success');
+        generateSlideCells(); 
+        advanceGuidedStep(6);
+        triggerAirDrying();
+      }
+      else if (['cv', 'iodine', 'decol', 'safranin'].includes(handItem)) {
+        if (sim.isSmeared && sim.heatPasses < 3) {
+          sim.cellsWashedOff = true;
+          logAction("FATAL ERROR: Stained unfixed smear. Cells washed off glass.", 'error');
+        }
+        
+        // Track the order of applied reagents for Exam audit
+        if (!sim.reagentOrderApplied.includes(handItem)) {
+          sim.reagentOrderApplied.push(handItem);
+        }
+        
+        startTimer(handItem); soundDrop();
+      }
+      else if (handItem === 'water') {
+        if (sim.isSmeared && sim.heatPasses < 3) sim.cellsWashedOff = true;
+        if (sim.activeReagent) {
+          const reagentDone = sim.activeReagent;
+          stopTimer();
+          const cascade = document.getElementById('slide-wash-cascade');
+          cascade.classList.remove('hidden'); cascade.classList.add('water-cascade');
+          soundRinse();
+          setTimeout(() => { cascade.classList.remove('water-cascade'); cascade.classList.add('hidden'); }, 750);
+          if (currentPhase === 'guided') showToast(`Rinsed ${reagentDone.toUpperCase()} with DI water.`, 'info');
+
+          if (reagentDone === 'cv') advanceGuidedStep(10);
+          if (reagentDone === 'iodine') advanceGuidedStep(12);
+          if (reagentDone === 'decol') advanceGuidedStep(14);
+          if (reagentDone === 'safranin') advanceGuidedStep(16);
+        }
+      }
+      else if (handItem === 'paper') {
+        sim.blotted = true; soundDrop(); 
+        if (currentPhase === 'guided') showToast('Slide blotted dry.', 'success');
+        advanceGuidedStep(17);
+      }
+      updateUI();
+    }
+
+    function generateSlideCells() {
+      sim.slideCells = [];
+      const density = 600; 
+      for (let i = 0; i < density; i++) {
+        const theta = Math.random() * Math.PI * 2;
+        const r = Math.sqrt(Math.random()) * 1800; 
+        sim.slideCells.push({ x: Math.cos(theta) * r, y: Math.sin(theta) * r, typeIndex: i });
+      }
+    }
+
+    function triggerAirDrying() {
+      sim.airDryTimer = 4;
+      const int = setInterval(() => {
+        sim.airDryTimer--; updateUI();
+        if (sim.airDryTimer <= 0) {
+          clearInterval(int); sim.isAirDried = true;
+          if (currentPhase === 'guided') showToast('Smear air-dried (matte haze). Ready to heat-fix.', 'success');
+          advanceGuidedStep(7);
+          updateUI();
+        }
+      }, 1000);
+    }
+
+    function clickPlate() {
+      if (handItem === 'loop') {
+        if (sim.loopState === 'hot') {
+          if (currentPhase === 'guided') showToast('Hot loop lysed bacteria!', 'error');
+          sim.loopState = 'cold'; updateCursorIcon(); return;
+        }
+        sim.loopState = 'colony'; soundDrop(); 
+        if (currentPhase === 'guided') showToast('Colony picked.', 'success');
+        advanceGuidedStep(5);
+        updateCursorIcon(); updateUI();
+      } else { 
+        if (currentPhase === 'guided') showToast('Equip loop to sample.', 'error'); 
+      }
+    }
+
+    function startTimer(reagent) {
+      stopTimer();
+      sim.activeReagent = reagent; timerSec = 0;
+      const disp = document.getElementById('stain-timer');
+      const tickRate = (reagent === 'decol') ? 1000 : 100;
+      
+      timerInt = setInterval(() => {
+        timerSec++;
+        if (reagent === 'decol') sim.decolSec = timerSec;
+        if (reagent === 'cv') sim.cvSec = timerSec;
+        if (reagent === 'iodine') sim.iodineSec = timerSec;
+        if (reagent === 'safranin') sim.safraninSec = timerSec;
+        
+        if (currentPhase === 'exam') {
+          // Exam Mode: Keep Timer visually neutral
+          disp.textContent = `Timer Active: ${timerSec}s`;
+          disp.className = 'font-mono text-sm font-bold text-slate-400 bg-slate-900 px-3 py-1 rounded border border-slate-700';
+        } else {
+          // Guided Mode: Visual Cues for Decol
+          disp.textContent = `Timer (${reagent.toUpperCase()}): ${timerSec}s`;
+          if (reagent === 'decol') {
+            if (timerSec >= 5 && timerSec <= 8) disp.className = 'font-mono text-sm font-bold text-emerald-400 bg-slate-900 px-3 py-1 rounded border border-emerald-600 animate-pulse';
+            else if (timerSec > 8) disp.className = 'font-mono text-sm font-bold text-rose-400 bg-slate-900 px-3 py-1 rounded border border-rose-600';
+          }
+        }
+      }, tickRate);
+
+      if (reagent === 'cv') advanceGuidedStep(9);
+      if (reagent === 'iodine') advanceGuidedStep(11);
+      if (reagent === 'decol') advanceGuidedStep(13);
+      if (reagent === 'safranin') advanceGuidedStep(15);
+    }
+
+    function stopTimer() {
+      if (timerInt) clearInterval(timerInt);
+      if (sim.activeReagent) logAction(`Applied ${sim.activeReagent.toUpperCase()} for ${timerSec}s.`);
+      sim.activeReagent = null;
+      document.getElementById('stain-timer').textContent = 'Timer: 00s';
+      document.getElementById('stain-timer').className = 'font-mono text-sm font-bold text-slate-400 bg-slate-900 px-3 py-1 rounded border border-slate-700';
+    }
+
+    function updateUI() {
+      document.getElementById('label-hand').textContent = handItem ? handItem.toUpperCase() : 'Empty Hand';
+      const loopLabel = document.getElementById('label-loop');
+      loopLabel.textContent = sim.loopState === 'hot' ? 'Red-Hot' : (sim.loopState === 'colony' ? 'Loaded' : 'Cold');
+      loopLabel.className = sim.loopState === 'hot' ? 'text-rose-400 font-mono font-bold' : (sim.loopState === 'colony' ? 'text-amber-400 font-mono font-bold' : 'text-slate-300 font-mono');
+
+      const smearLabel = document.getElementById('label-smear');
+      if (sim.isScorched) { smearLabel.textContent = 'Scorched'; smearLabel.className = 'text-rose-500 font-mono font-bold'; }
+      else if (sim.heatPasses >= 3) { smearLabel.textContent = 'Heat-Fixed (Ready)'; smearLabel.className = 'text-emerald-400 font-mono font-bold'; }
+      else if (sim.isAirDried) { smearLabel.textContent = 'Air-Dried (Matte)'; smearLabel.className = 'text-teal-300 font-mono'; }
+      else if (sim.airDryTimer > 0) { smearLabel.textContent = `Air-Drying (${sim.airDryTimer}s)`; smearLabel.className = 'text-amber-400 font-mono animate-pulse'; }
+      else if (sim.isSmeared) { smearLabel.textContent = 'Wet Smear'; smearLabel.className = 'text-blue-300 font-mono'; }
+      else if (sim.hasSaline) { smearLabel.textContent = 'Saline Drop'; smearLabel.className = 'text-blue-400 font-mono'; }
+      else { smearLabel.textContent = 'Clean Slide'; smearLabel.className = 'text-slate-400 font-mono'; }
+
+      document.getElementById('heat-passes-indicator').textContent = `Flame Passes: ${sim.heatPasses} / 3`;
+
+      const flood = document.getElementById('slide-flood');
+      const puddle = document.getElementById('smear-puddle');
+      
+      if (sim.activeReagent === 'cv') flood.style.backgroundColor = 'rgba(109, 40, 217, 0.7)';
+      else if (sim.activeReagent === 'iodine') flood.style.backgroundColor = 'rgba(217, 119, 6, 0.7)';
+      else if (sim.activeReagent === 'decol') flood.style.backgroundColor = 'rgba(255, 255, 255, 0.5)';
+      else if (sim.activeReagent === 'safranin') flood.style.backgroundColor = 'rgba(225, 29, 72, 0.7)';
+      else flood.style.backgroundColor = 'transparent';
+
+      puddle.style.backgroundColor = 'transparent';
+      if (sim.isScorched) puddle.style.backgroundColor = 'rgba(0,0,0,0.85)';
+      else if (sim.activeReagent === 'cv') puddle.style.backgroundColor = 'rgba(109, 40, 217, 0.9)';
+      else if (sim.activeReagent === 'iodine') puddle.style.backgroundColor = 'rgba(217, 119, 6, 0.9)';
+      else if (sim.activeReagent === 'decol') puddle.style.backgroundColor = 'rgba(255, 255, 255, 0.3)';
+      else if (sim.activeReagent === 'safranin') puddle.style.backgroundColor = 'rgba(225, 29, 72, 0.9)';
+      else if (sim.isAirDried) puddle.style.backgroundColor = 'rgba(255, 255, 255, 0.25)';
+      else if (sim.isSmeared) puddle.style.backgroundColor = 'rgba(255, 255, 255, 0.5)';
+      else if (sim.hasSaline) puddle.style.backgroundColor = 'rgba(56, 189, 248, 0.4)';
+
+      if (handItem === 'slide') updateCursorIcon();
+    }
+
+    function drawPlate() {
+      const canvas = document.getElementById('plate-canvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, 128, 128);
+      ctx.fillStyle = activeCase.data.gram === 'positive' ? '#f59e0b' : '#e2e8f0';
+      if (activeCase.id === 'Mixed') ctx.fillStyle = '#fef08a';
+      for (let i = 0; i < 35; i++) {
+        ctx.beginPath();
+        ctx.arc(20 + Math.random() * 88, 20 + Math.random() * 88, 2.5 + Math.random() * 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    /* ------------------------------------------------------------------------ */
+    /* Virtual Microscope Engine                                                */
+    /* ------------------------------------------------------------------------ */
+    function initMicroscopeControls() {
+      document.querySelectorAll('.lens-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.lens-btn').forEach(b => b.className = 'lens-btn px-1.5 py-1 text-xs rounded bg-slate-800 text-slate-300 font-mono hover:bg-slate-700');
+          btn.className = 'lens-btn px-1.5 py-1 text-xs rounded bg-teal-600 text-white font-mono font-bold';
+          sim.micro.mag = parseInt(btn.getAttribute('data-lens'));
+          soundDrop(); logAction(`Objective lens switched to ${sim.micro.mag}x`); renderMicroscope();
+        });
+      });
+
+      document.getElementById('btn-apply-oil').addEventListener('click', () => {
+        sim.micro.hasOil = true;
+        document.getElementById('oil-status-badge').textContent = 'Applied';
+        document.getElementById('oil-status-badge').className = 'font-mono text-emerald-400 font-bold';
+        soundDrop(); logAction("Immersion oil applied to slide."); renderMicroscope();
+      });
+
+      document.getElementById('micro-fine-slider').addEventListener('input', (e) => {
+        sim.micro.focus = parseInt(e.target.value);
+        document.getElementById('focus-readout').textContent = `${sim.micro.focus}%`;
+        renderMicroscope();
+      });
+
+      document.getElementById('micro-light-slider').addEventListener('input', (e) => {
+        sim.micro.light = parseInt(e.target.value);
+        document.getElementById('light-readout').textContent = `${sim.micro.light}%`;
+        renderMicroscope();
+      });
+    }
+
+    function startDrag(e) { isDraggingStage = true; lastMouse = { x: e.clientX, y: e.clientY }; }
+    function dragStage(e) {
+      if (!isDraggingStage) return;
+      stageX += (e.clientX - lastMouse.x); stageY += (e.clientY - lastMouse.y);
+      lastMouse = { x: e.clientX, y: e.clientY };
+      renderMicroscope();
+    }
+    function stopDrag() { isDraggingStage = false; }
+
+    function adjustHex(hex, amount) {
+      if (hex === 'mixed') return '#000000';
+      let color = hex.replace('#', '');
+      let r = parseInt(color.substring(0,2), 16) + amount;
+      let g = parseInt(color.substring(2,4), 16) + amount;
+      let b = parseInt(color.substring(4,6), 16) + amount;
+      r = Math.max(0, Math.min(255, r)); g = Math.max(0, Math.min(255, g)); b = Math.max(0, Math.min(255, b));
+      return `#${(r).toString(16).padStart(2,'0')}${(g).toString(16).padStart(2,'0')}${(b).toString(16).padStart(2,'0')}`;
+    }
+
+    function renderMicroscope() {
+      const canvas = document.getElementById('microscope-canvas');
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width, h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+
+      const lightFactor = sim.micro.light / 100;
+      const baseLum = Math.floor(238 * lightFactor);
+      
+      const bgGrad = ctx.createRadialGradient(w/2, h/2, 0, w/2, h/2, w/2);
+      bgGrad.addColorStop(0, `rgb(${baseLum}, ${baseLum}, ${baseLum - 5})`); 
+      bgGrad.addColorStop(1, `rgb(${baseLum - 30}, ${baseLum - 30}, ${baseLum - 40})`); 
+      ctx.fillStyle = bgGrad;
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.fillStyle = `rgba(0,0,0,${0.03 * lightFactor})`;
+      for (let j=0; j<25; j++) {
+        const dx = w/2 + ((j*479)%w - w/2) + stageX;
+        const dy = h/2 + ((j*631)%h - h/2) + stageY;
+        if(dx>0 && dx<w && dy>0 && dy<h) {
+          ctx.beginPath(); ctx.arc(dx, dy, (j%3)+1, 0, Math.PI*2); ctx.fill();
+        }
+      }
+
+      const note = document.getElementById('micro-audit-note');
+      const alert = document.getElementById('microscope-error-alert');
+
+      if (sim.isScorched) {
+        note.textContent = 'Slide scorched! Cellular morphology destroyed by extreme heat.'; alert.classList.add('hidden');
+        ctx.fillStyle = 'rgba(20,20,20,0.85)';
+        for (let i = 0; i < sim.slideCells.length; i++) {
+          const cell = sim.slideCells[i];
+          const cx = w/2 + cell.x * (sim.micro.mag/100) + stageX;
+          const cy = h/2 + cell.y * (sim.micro.mag/100) + stageY;
+          if (cx < 0 || cx > w || cy < 0 || cy > h) continue;
+          ctx.beginPath(); ctx.arc(cx, cy, 3 + Math.random()*4, 0, Math.PI * 2); ctx.fill(); 
+        }
+        return;
+      }
+
+      if (sim.cellsWashedOff || !sim.hasColony) {
+        note.textContent = 'Ghost slide: Cells washed away (skipped heat-fix) or no sample emulsified.';
+        alert.classList.add('hidden'); return;
+      }
+
+      let blurAmt = Math.abs(sim.micro.focus - 50) * 0.16;
+      if (!sim.blotted) blurAmt += 4; 
+      if (sim.micro.mag === 100 && !sim.micro.hasOil) {
+        blurAmt += 11;
+        alert.classList.remove('hidden');
+        note.textContent = 'Refraction mismatch: Apply Immersion Oil for 100x lens!';
+      } else {
+        alert.classList.add('hidden');
+      }
+      canvas.style.filter = `blur(${blurAmt.toFixed(1)}px)`;
+
+      // Dynamic Reagent Optical Logic Matrix
+      let hasCV = sim.cvSec > 10;
+      let hasIodine = sim.iodineSec > 10;
+      let hasSaf = sim.safraninSec > 10;
+      let dSec = sim.decolSec;
+
+      let techniqueMsg = 'Technique optimal: Crisp cellular resolution.';
+
+      if (!hasCV && !hasSaf) techniqueMsg = "Unstained slide: Cells are faint or completely transparent.";
+      else if (!hasCV && hasSaf) techniqueMsg = "Primary stain omitted: All cells took up the pink counterstain.";
+      else if (hasCV && !hasIodine && dSec > 0) techniqueMsg = "Mordant omitted: Primary stain easily washed out of all cells.";
+      else if (hasCV && dSec === 0 && hasSaf) techniqueMsg = "Decolorization omitted: All cells retained the dark primary stain.";
+      else if (dSec > 9) techniqueMsg = "Over-decolorized: Gram-positive cells falsely appear pink.";
+      else if (dSec > 0 && dSec < 4) techniqueMsg = "Under-decolorized: Gram-negative cells falsely appear purple.";
+      else if (!hasSaf && dSec >= 4) techniqueMsg = "Counterstain omitted: Gram-negative cells are completely invisible.";
+
+      if (blurAmt <= 2 && alert.classList.contains('hidden')) note.textContent = techniqueMsg;
+      else if (alert.classList.contains('hidden') && sim.blotted) note.textContent = 'Adjust Fine Focus knob to resolve cells.';
+      else if (!sim.blotted) note.textContent = 'Slide is wet and optically distorted. Blot dry with bibulous paper.';
+
+      ctx.globalCompositeOperation = 'multiply';
+      const magFactor = sim.micro.mag / 100;
+      const rBase = 4.5 * magFactor;
+      
+      // Asymmetric irregular cluster offsets (grape-like bundle)
+      const clusterOffsets = [ 
+        {x: 0, y: 0}, {x: 0.7, y: 0.4}, {x: -0.6, y: 0.5}, {x: 0.2, y: 0.9}, 
+        {x: -0.3, y: -0.6}, {x: 0.5, y: -0.5}, {x: 0.9, y: -0.1}, {x: -0.2, y: 1.4} 
+      ];
+
+      for (let i = 0; i < sim.slideCells.length; i++) {
+        const cell = sim.slideCells[i];
+        const cx = w/2 + (cell.x * magFactor) + stageX;
+        const cy = h/2 + (cell.y * magFactor) + stageY;
+        
+        if (cx < -20 || cx > w+20 || cy < -20 || cy > h+20) continue;
+
+        ctx.save();
+        ctx.translate(cx, cy);
+
+        let type = activeCase.data.renderType;
+        if (type === 'mixed') {
+          type = (cell.typeIndex % 2 === 0) ? 'clusters' : 'rods_small';
+        }
+
+        let trueGram = (type === 'rods_small' || type === 'pairs_kidney' || type === 'curved' || type === 'spirochete') ? 'negative' : 'positive';
+        if (activeCase.id !== 'Mixed') trueGram = activeCase.data.gram;
+
+        let retainsCV = false;
+        if (hasCV) {
+          if (trueGram === 'positive') {
+            retainsCV = hasIodine ? (dSec <= 9) : (dSec === 0);
+          } else {
+            retainsCV = (dSec < 4);
+          }
+        }
+
+        let cColor = '#94a3b8';
+        let cellAlpha = 1.0;
+
+        if (sim.cvSec === 0 && sim.safraninSec === 0) {
+          cColor = '#94a3b8'; cellAlpha = 0.2; // Unstained
+        } else if (retainsCV) {
+          cColor = '#6d28d9'; // Purple
+        } else if (hasSaf) {
+          cColor = '#e11d48'; // Pink
+        } else {
+          cellAlpha = 0; // Invisible (e.g. Gram-neg without safranin)
+        }
+
+        if (cellAlpha === 0) {
+          ctx.restore();
+          continue; 
+        }
+
+        ctx.globalAlpha = cellAlpha;
+
+        const highlightColor = adjustHex(cColor, 35);
+        const shadowColor = adjustHex(cColor, -35);
+
+        if (type === 'clusters' || type === 'chains') {
+          const cellsCount = type === 'clusters' ? 8 : 6;
+          ctx.rotate(cell.typeIndex); 
+          for (let c = 0; c < cellsCount; c++) {
+            const rx = type === 'clusters' ? clusterOffsets[c].x * rBase * 1.1 : (c-2.5)*(rBase*1.6);
+            const ry = type === 'clusters' ? clusterOffsets[c].y * rBase * 1.1 : Math.sin(c * 0.5)*(rBase*0.5);
+            const rSize = rBase * (0.9 + Math.random()*0.2);
+            
+            const grad = ctx.createRadialGradient(rx - rSize*0.3, ry - rSize*0.3, rSize*0.1, rx, ry, rSize);
+            grad.addColorStop(0, highlightColor);
+            grad.addColorStop(0.7, cColor);
+            grad.addColorStop(1, shadowColor);
+            ctx.fillStyle = grad;
+            ctx.beginPath(); ctx.arc(rx, ry, rSize, 0, Math.PI*2); ctx.fill();
+          }
+        } 
+        else if (type === 'pairs_lancet' || type === 'pairs_kidney') {
+          ctx.rotate(cell.typeIndex);
+          ctx.fillStyle = cColor;
+          if (type === 'pairs_lancet') {
+            ctx.beginPath(); ctx.ellipse(-rBase*0.9, 0, rBase*1.2, rBase*0.8, -0.2, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.ellipse(rBase*0.9, 0, rBase*1.2, rBase*0.8, 0.2, 0, Math.PI*2); ctx.fill();
+          } else {
+            ctx.beginPath(); ctx.arc(-rBase*0.8, 0, rBase, 0.4, Math.PI*2-0.4); ctx.fill();
+            ctx.beginPath(); ctx.arc(rBase*0.8, 0, rBase, Math.PI+0.4, Math.PI*3-0.4); ctx.fill();
+          }
+        } 
+        else if (type.includes('rods')) {
+          ctx.rotate(cell.typeIndex);
+          const rodLen = type === 'rods_large' ? rBase*5 : rBase*3;
+          const rodThick = type === 'rods_large' ? rBase*1.6 : rBase*1.2;
+          const varLen = rodLen * 0.9;
+
+          const linGrad = ctx.createLinearGradient(-varLen/2, -rodThick/2, -varLen/2, rodThick/2);
+          linGrad.addColorStop(0, shadowColor);
+          linGrad.addColorStop(0.3, highlightColor);
+          linGrad.addColorStop(1, shadowColor);
+          ctx.fillStyle = linGrad;
+          ctx.beginPath(); ctx.roundRect(-varLen/2, -rodThick/2, varLen, rodThick, rodThick/2); ctx.fill();
+        }
+        else if (type === 'curved') {
+          ctx.rotate(cell.typeIndex);
+          ctx.lineWidth = rBase*1.2; ctx.lineCap = 'round';
+          ctx.strokeStyle = cColor;
+          ctx.beginPath(); ctx.arc(0, rBase*2, rBase*2, Math.PI*1.2, Math.PI*1.8); ctx.stroke();
+        }
+        else if (type === 'spirochete') {
+          ctx.rotate(cell.typeIndex);
+          ctx.lineWidth = rBase*0.6; ctx.globalAlpha = cellAlpha === 0.2 ? 0.2 : 0.8;
+          ctx.strokeStyle = cColor;
+          ctx.beginPath();
+          for(let p = -18; p <= 18; p++) { ctx.lineTo(p * magFactor, Math.sin(p * 0.9) * rBase); }
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1.0;
+        ctx.restore();
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    }
+
+    /* ------------------------------------------------------------------------ */
+    /* Grading Engine & Feedback                                                */
+    /* ------------------------------------------------------------------------ */
+    function processFindings() {
+      const g = document.getElementById('report-gram').value;
+      const s = document.getElementById('report-shape').value;
+      const fb = document.getElementById('immediate-feedback-box');
+
+      if (!g || !s) {
+        fb.className = 'mb-3 p-3 rounded-lg bg-slate-800 text-slate-300 block';
+        fb.textContent = 'Please complete both diagnostic selections to check findings.';
+        return;
+      }
+
+      fb.classList.remove('hidden');
+      
+      let isGramCorrect = (g === activeCase.data.gram);
+      let isShapeCorrect = (s === activeCase.data.shape);
+      const isFatal = sim.isScorched || sim.cellsWashedOff || (!sim.hasColony);
+
+      if (isFatal) {
+        fb.className = 'mb-3 p-3 rounded-lg bg-rose-950/80 border border-rose-700 text-rose-200 block space-y-2';
+        fb.innerHTML = `
+          <div class="font-bold"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Technical Failure</div>
+          <p>You cannot evaluate this slide. The cells were either washed off or scorched. Reset the bench and try again.</p>
+        `;
+        soundError();
+        return;
+      }
+
+      if (isGramCorrect && isShapeCorrect) {
+        fb.className = 'mb-3 p-4 rounded-lg bg-emerald-950 border border-emerald-700 text-emerald-200 block space-y-2';
+        fb.innerHTML = `
+          <div class="font-bold text-sm"><i class="fa-solid fa-circle-check mr-1"></i> Perfect Diagnosis!</div>
+          <p class="text-xs">You correctly identified the morphology and executed the stain successfully.</p>
+        `;
+        soundSuccess();
+        
+        if (currentPhase === 'guided') {
+          fb.innerHTML += `
+            <div class="mt-4 flex gap-3">
+              <button onclick="document.getElementById('protocol-modal').classList.remove('hidden'); document.getElementById('protocol-modal').classList.add('flex');" class="flex-1 bg-slate-800 hover:bg-slate-700 border border-emerald-700 text-white font-bold py-2 rounded shadow transition text-xs flex items-center justify-center gap-2">
+                <i class="fa-solid fa-flask"></i> Practice Another
+              </button>
+              <button onclick="startExamPrompt()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 rounded shadow transition text-xs flex items-center justify-center gap-2">
+                Start Assessment <i class="fa-solid fa-arrow-right"></i>
+              </button>
+            </div>
+          `;
+        }
+      } else {
+        fb.className = 'mb-3 p-3 rounded-lg bg-rose-950 border border-rose-700 text-rose-200 block space-y-2';
+        fb.innerHTML = `
+          <div class="font-bold"><i class="fa-solid fa-xmark mr-1"></i> Diagnostic Error</div>
+          <ul class="list-disc list-inside ml-2">
+            ${!isGramCorrect ? `<li>Gram Reaction is incorrect (True: ${activeCase.data.gram})</li>` : ''}
+            ${!isShapeCorrect ? `<li>Morphology is incorrect</li>` : ''}
+          </ul>
+        `;
+        soundError();
+      }
+    }
+
+    function submitFinalReport() {
+      const g = document.getElementById('report-gram').value;
+      const s = document.getElementById('report-shape').value;
+      const fb = document.getElementById('immediate-feedback-box');
+
+      if (!g || !s) {
+        fb.className = 'mt-3 p-3 rounded-lg bg-rose-950/80 border border-rose-700 text-rose-200 block';
+        fb.textContent = 'Complete both diagnostic selections.';
+        return;
+      }
+
+      fb.classList.remove('hidden');
+
+      const isFatal = sim.isScorched || sim.cellsWashedOff || (!sim.hasColony);
+      let isGramCorrect = (g === activeCase.data.gram);
+      let isShapeCorrect = (s === activeCase.data.shape);
+
+      let auditPoints = [];
+      let totalGrade = 100;
+      
+      // Technical Execution Checks
+      if (sim.isScorched) { totalGrade -= 40; auditPoints.push('<span style="color: #b91c1c; font-weight: bold;">CRITICAL ERROR: Slide was scorched (>4 flame passes). Cellular architecture was charred.</span>'); }
+      if (sim.cellsWashedOff) { totalGrade -= 50; auditPoints.push('<span style="color: #b91c1c; font-weight: bold;">CRITICAL ERROR: Slide stained without heat-fixation. Smear washed down sink.</span>'); }
+      if (!sim.hasColony) { totalGrade -= 50; auditPoints.push('<span style="color: #b91c1c; font-weight: bold;">CRITICAL ERROR: No bacterial colony was emulsified. Field empty.</span>'); }
+      
+      // Omission & Sequence Verification
+      if (sim.cvSec === 0) { totalGrade -= 20; auditPoints.push('<span style="color: #b91c1c; font-weight: bold;">OMISSION: Primary stain (Crystal Violet) was skipped.</span>'); }
+      if (sim.iodineSec === 0) { totalGrade -= 15; auditPoints.push('<span style="color: #b45309; font-weight: bold;">OMISSION: Mordant (Iodine) was skipped. CV-I complex failed to form.</span>'); }
+      if (sim.decolSec === 0) { totalGrade -= 20; auditPoints.push('<span style="color: #b91c1c; font-weight: bold;">OMISSION: Decolorizer was skipped. All cells retained primary dye.</span>'); }
+      if (sim.safraninSec === 0) { totalGrade -= 15; auditPoints.push('<span style="color: #b45309; font-weight: bold;">OMISSION: Counterstain (Safranin) was skipped. Gram-negative cells invisible.</span>'); }
+
+      // Timing Checks
+      if (sim.decolSec > 0) {
+        if (sim.decolSec < 4) { totalGrade -= 15; auditPoints.push(`<span style="color: #b45309; font-weight: bold;">TIMING DEFICIT: Under-decolorized (${sim.decolSec}s). Gram-negative bacteria falsely appear purple.</span>`); }
+        else if (sim.decolSec > 8) { totalGrade -= 15; auditPoints.push(`<span style="color: #b45309; font-weight: bold;">TIMING DEFICIT: Over-decolorized (${sim.decolSec}s). Gram-positive cells falsely appear pink.</span>`); }
+      }
+      
+      // Optics Check
+      if (!sim.micro.hasOil) { totalGrade -= 10; auditPoints.push('<span style="color: #b45309;">OPTICAL FLAW: 1000x lens operated without immersion oil.</span>'); }
+
+      let gramVerdict = '';
+      let shapeVerdict = '';
+
+      if (isFatal) {
+        totalGrade = Math.min(totalGrade, 35);
+        gramVerdict = '<span style="color: #b91c1c; font-weight: bold;">INVALIDATED (0%)</span>';
+        shapeVerdict = '<span style="color: #b91c1c; font-weight: bold;">INVALIDATED (0%)</span>';
+        auditPoints.push('<span style="color: #b91c1c; font-weight: bold;">ACADEMIC OVERRIDE: Specimen unobservable. Correct selections ruled non-empirical (lucky guess) and awarded 0 points.</span>');
+      } else {
+        if (isGramCorrect) { gramVerdict = '<span style="color: #0f766e; font-weight: bold;">Pass (+25%)</span>'; }
+        else { totalGrade -= 25; gramVerdict = '<span style="color: #b91c1c; font-weight: bold;">Incorrect (-25%)</span>'; }
+
+        if (isShapeCorrect) { shapeVerdict = '<span style="color: #0f766e; font-weight: bold;">Pass (+25%)</span>'; }
+        else { totalGrade -= 25; shapeVerdict = '<span style="color: #b91c1c; font-weight: bold;">Incorrect (-25%)</span>'; }
+      }
+
+      if (auditPoints.length === 0) auditPoints.push('<span style="color: #0f766e; font-weight: bold;">FLAWLESS BENCH TECHNIQUE: All mechanics and optics executed to standard.</span>');
+      totalGrade = Math.max(0, totalGrade);
+
+      // Populate Print Layout
+      document.getElementById('print-student-name').textContent = studentName;
+      document.getElementById('print-student-id').textContent = studentIdNum;
+      document.getElementById('print-date').textContent = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+      document.getElementById('print-isolate-id').textContent = examIdTag;
+      document.getElementById('print-final-score').textContent = `${totalGrade} / 100`;
+      document.getElementById('print-eval-status').textContent = totalGrade >= 80 ? 'Proficient Lab Competency' : 'Unsatisfactory Technique';
+      document.getElementById('print-training-status').textContent = trainingStatus;
+      document.getElementById('print-quiz-score').textContent = `${quizScore}%`;
+      document.getElementById('print-cert-id').textContent = `MICR-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      document.getElementById('print-gram-res').textContent = g ? g.replace('_', ' ').toUpperCase() : 'None Selected';
+      document.getElementById('print-gram-grade').innerHTML = gramVerdict;
+
+      // Extract raw text from options so it prints cleanly without underscores
+      const shapeText = document.getElementById('report-shape').options[document.getElementById('report-shape').selectedIndex].text;
+      document.getElementById('print-shape-res').textContent = s ? shapeText : 'None Selected';
+      document.getElementById('print-shape-grade').innerHTML = shapeVerdict;
+
+      document.getElementById('print-audit-notes').innerHTML = `
+        <ul style="margin: 0; padding-left: 18px;">
+          ${auditPoints.map(p => `<li style="margin-bottom: 4px;">${p}</li>`).join('')}
+        </ul>
+      `;
+
+      document.getElementById('print-action-log').innerHTML = sim.actionLog.map(log => {
+        let style = "color: #334155; margin-bottom: 2px;";
+        if (log.type === 'error') style = "color: #b91c1c; font-weight: bold; margin-bottom: 2px;";
+        if (log.type === 'warning') style = "color: #b45309; font-weight: bold; margin-bottom: 2px;";
+        return `<div style="${style}">${log.text}</div>`;
+      }).join('');
+
+      fb.className = totalGrade >= 80 
+        ? 'mt-3 p-3 rounded-lg bg-emerald-950/80 border border-emerald-700 text-emerald-200 block space-y-2'
+        : 'mt-3 p-3 rounded-lg bg-rose-950/80 border border-rose-700 text-rose-200 block space-y-2';
+      
+      fb.innerHTML = `
+        <div class="font-bold">Practicum Grade: ${totalGrade}%</div>
+        <p>${totalGrade >= 80 ? 'Proficient evaluation completed. Proceed to print.' : 'Protocol errors detected. Export your official evaluation report below.'}</p>
+        <button onclick="window.print()" class="w-full mt-2 bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 rounded shadow transition flex items-center justify-center gap-2">
+          <i class="fa-solid fa-file-pdf text-rose-400"></i> Print Official Report
+        </button>
+      `;
+    }
+  </script>
+</body>
+</html>
